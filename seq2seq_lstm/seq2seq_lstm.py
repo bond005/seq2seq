@@ -31,120 +31,6 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
 
 
-def generate_data_for_training(input_texts, target_texts, batch_size, max_encoder_seq_length, max_decoder_seq_length,
-                               input_token_index, target_token_index, lowercase):
-    """ Generate feature matrices based on one-hot vectorization for pairs of texts by mini-batches.
-
-    This generator is used in the training process of the neural model (see the `fit_generator` method of the Keras
-    `Model` object). Each text (input or target one) is a unicode string in which all tokens are separated by spaces.
-    Each pair of texts generates three 3-D arrays (numpy.ndarray objects):
-
-    1) one-hot vectorization of corresponded input text (first dimension is index of text in the mini-batch, second
-    dimension is a timestep, or token position in this text, and third dimension is index of this token in the input
-    vocabulary);
-
-    2) one-hot vectorization of corresponded target text (first dimension is index of text in the mini-batch, second
-    dimension is a timestep, or token position in this text, and third dimension is index of this token in the target
-    vocabulary);
-
-    3) array is the same as second one but offset by one timestep.
-
-    In the training process first and second array will be fed into the neural model, and third array will be considered
-    as its desired output.
-
-    :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
-    :param target_texts: sequence (list, tuple or numpy.ndarray) of target texts.
-    :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
-    :param max_encoder_seq_length: maximal length of any input text.
-    :param max_decoder_seq_length: maximal length of any target text.
-    :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
-    :param target_token_index: the special index for one-hot encoding any target text as numerical feature matrix.
-    :param lowercase: the need to bring all tokens of all texts to the lowercase.
-
-    :return the two-element tuple with input and output mini-batch data for the neural model training respectively.
-
-    """
-    n = len(input_texts)
-    n_batches = n // batch_size
-    while (n_batches * batch_size) < n:
-        n_batches += 1
-    start_pos = 0
-    for batch_ind in range(n_batches - 1):
-        end_pos = start_pos + batch_size
-        encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)), dtype=np.float32)
-        decoder_input_data = np.zeros((batch_size, max_decoder_seq_length, len(target_token_index)), dtype=np.float32)
-        decoder_target_data = np.zeros((batch_size, max_decoder_seq_length, len(target_token_index)), dtype=np.float32)
-        for i, (input_text, target_text) in enumerate(zip(input_texts[start_pos:end_pos],
-                                                          target_texts[start_pos:end_pos])):
-            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-                encoder_input_data[i, t, input_token_index[char]] = 1.0
-            for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, lowercase) + [u'\n']):
-                decoder_input_data[i, t, target_token_index[char]] = 1.0
-                if t > 0:
-                    decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
-        start_pos = end_pos
-        yield ([encoder_input_data, decoder_input_data], decoder_target_data)
-    end_pos = n
-    encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
-                                  dtype=np.float32)
-    decoder_input_data = np.zeros((end_pos - start_pos, max_decoder_seq_length, len(target_token_index)),
-                                  dtype=np.float32)
-    decoder_target_data = np.zeros((end_pos - start_pos, max_decoder_seq_length, len(target_token_index)),
-                                   dtype=np.float32)
-    for i, (input_text, target_text) in enumerate(zip(input_texts[start_pos:end_pos],
-                                                      target_texts[start_pos:end_pos])):
-        for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-            encoder_input_data[i, t, input_token_index[char]] = 1.0
-        for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, lowercase) + [u'\n']):
-            decoder_input_data[i, t, target_token_index[char]] = 1.0
-            if t > 0:
-                decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
-    yield ([encoder_input_data, decoder_input_data], decoder_target_data)
-
-
-def generate_data_for_prediction(input_texts, batch_size, max_encoder_seq_length, input_token_index, lowercase):
-    """ Generate feature matrices based on one-hot vectorization for input texts by mini-batches.
-
-    This generator is used in the prediction process by means of the trained neural model. Each text is a unicode string
-    in which all tokens are separated by spaces. It generates a 3-D array (numpy.ndarray object), using one-hot
-    enconding (first dimension is index of text in the mini-batch, second dimension is a timestep, or token position in
-    this text, and third dimension is index of this token in the input vocabulary).
-
-    :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
-    :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
-    :param max_encoder_seq_length: maximal length of any input text.
-    :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
-    :param lowercase: the need to bring all tokens of all texts to the lowercase.
-
-    :return the 3-D array representation of input mini-batch data.
-
-    """
-    n = len(input_texts)
-    n_batches = n // batch_size
-    while (n_batches * batch_size) < n:
-        n_batches += 1
-    start_pos = 0
-    for batch_ind in range(n_batches - 1):
-        end_pos = start_pos + batch_size
-        encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)), dtype=np.float32)
-        for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-                if t >= max_encoder_seq_length:
-                    break
-                encoder_input_data[i, t, input_token_index[char]] = 1.0
-        start_pos = end_pos
-        yield encoder_input_data
-    end_pos = n
-    encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
-                                  dtype=np.float32)
-    for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-        for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-            if t >= max_encoder_seq_length:
-                break
-            encoder_input_data[i, t, input_token_index[char]] = 1.0
-    yield encoder_input_data
-
-
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
     def __init__(self, batch_size=256, epochs=100, latent_dim=256, validation_split=0.2, decay=0.1, dropout=0.5,
@@ -300,7 +186,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.max_decoder_seq_length_ = max_decoder_seq_length
         encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
         encoder = LSTM(self.latent_dim, return_state=True, dropout=self.dropout,
-                       ecurrent_dropout=self.recurrent_dropout)
+                       recurrent_dropout=self.recurrent_dropout)
         encoder_outputs, state_h, state_c = encoder(encoder_inputs)
         encoder_states = [state_h, state_c]
         decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
@@ -319,7 +205,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             n_batches_for_validation = len(X_eval_set) // self.batch_size
             while (n_batches_for_validation * self.batch_size) < len(X_eval_set):
                 n_batches_for_validation += 1
-            generate_data_for_validation = generate_data_for_training(
+            generate_data_for_validation = Seq2SeqLSTM.generate_data_for_training(
                 input_texts=X_eval_set, target_texts=y_eval_set,
                 batch_size=self.batch_size,
                 max_encoder_seq_length=max_encoder_seq_length,
@@ -342,7 +228,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                                 save_weights_only=True)
             )
             model.fit_generator(
-                generator=generate_data_for_training(
+                generator=Seq2SeqLSTM.generate_data_for_training(
                     input_texts=X, target_texts=y,
                     batch_size=self.batch_size,
                     max_encoder_seq_length=max_encoder_seq_length,
@@ -393,7 +279,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                                'max_encoder_seq_length_', 'max_decoder_seq_length_',
                                'encoder_model_', 'decoder_model_'])
         texts = list()
-        for input_seq in generate_data_for_prediction(
+        for input_seq in Seq2SeqLSTM.generate_data_for_prediction(
                 input_texts=X, batch_size=self.batch_size, max_encoder_seq_length=self.max_encoder_seq_length_,
                 input_token_index=self.input_token_index_, lowercase=self.lowercase
         ):
@@ -441,7 +327,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         try:
             encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
             encoder = LSTM(self.latent_dim, return_state=True, dropout=self.dropout,
-                           ecurrent_dropout=self.recurrent_dropout)
+                           recurrent_dropout=self.recurrent_dropout)
             encoder_outputs, state_h, state_c = encoder(encoder_inputs)
             encoder_states = [state_h, state_c]
             decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
@@ -778,3 +664,121 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         fp.close()
         del fp
         return file_name
+
+    @staticmethod
+    def generate_data_for_training(input_texts, target_texts, batch_size, max_encoder_seq_length,
+                                   max_decoder_seq_length, input_token_index, target_token_index, lowercase):
+        """ Generate feature matrices based on one-hot vectorization for pairs of texts by mini-batches.
+
+        This generator is used in the training process of the neural model (see the `fit_generator` method of the Keras
+        `Model` object). Each text (input or target one) is a unicode string in which all tokens are separated by
+        spaces. Each pair of texts generates three 3-D arrays (numpy.ndarray objects):
+
+        1) one-hot vectorization of corresponded input text (first dimension is index of text in the mini-batch, second
+        dimension is a timestep, or token position in this text, and third dimension is index of this token in the input
+        vocabulary);
+
+        2) one-hot vectorization of corresponded target text (first dimension is index of text in the mini-batch, second
+        dimension is a timestep, or token position in this text, and third dimension is index of this token in the
+        target vocabulary);
+
+        3) array is the same as second one but offset by one timestep.
+
+        In the training process first and second array will be fed into the neural model, and third array will be
+        considered as its desired output.
+
+        :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
+        :param target_texts: sequence (list, tuple or numpy.ndarray) of target texts.
+        :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
+        :param max_encoder_seq_length: maximal length of any input text.
+        :param max_decoder_seq_length: maximal length of any target text.
+        :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
+        :param target_token_index: the special index for one-hot encoding any target text as numerical feature matrix.
+        :param lowercase: the need to bring all tokens of all texts to the lowercase.
+
+        :return the two-element tuple with input and output mini-batch data for the neural model training respectively.
+
+        """
+        n = len(input_texts)
+        n_batches = n // batch_size
+        while (n_batches * batch_size) < n:
+            n_batches += 1
+        start_pos = 0
+        for batch_ind in range(n_batches - 1):
+            end_pos = start_pos + batch_size
+            encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
+                                          dtype=np.float32)
+            decoder_input_data = np.zeros((batch_size, max_decoder_seq_length, len(target_token_index)),
+                                          dtype=np.float32)
+            decoder_target_data = np.zeros((batch_size, max_decoder_seq_length, len(target_token_index)),
+                                           dtype=np.float32)
+            for i, (input_text, target_text) in enumerate(zip(input_texts[start_pos:end_pos],
+                                                              target_texts[start_pos:end_pos])):
+                for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
+                    encoder_input_data[i, t, input_token_index[char]] = 1.0
+                for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, lowercase) + [u'\n']):
+                    decoder_input_data[i, t, target_token_index[char]] = 1.0
+                    if t > 0:
+                        decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
+            start_pos = end_pos
+            yield ([encoder_input_data, decoder_input_data], decoder_target_data)
+        end_pos = n
+        encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
+                                      dtype=np.float32)
+        decoder_input_data = np.zeros((end_pos - start_pos, max_decoder_seq_length, len(target_token_index)),
+                                      dtype=np.float32)
+        decoder_target_data = np.zeros((end_pos - start_pos, max_decoder_seq_length, len(target_token_index)),
+                                       dtype=np.float32)
+        for i, (input_text, target_text) in enumerate(zip(input_texts[start_pos:end_pos],
+                                                          target_texts[start_pos:end_pos])):
+            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
+                encoder_input_data[i, t, input_token_index[char]] = 1.0
+            for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, lowercase) + [u'\n']):
+                decoder_input_data[i, t, target_token_index[char]] = 1.0
+                if t > 0:
+                    decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
+        yield ([encoder_input_data, decoder_input_data], decoder_target_data)
+
+    @staticmethod
+    def generate_data_for_prediction(input_texts, batch_size, max_encoder_seq_length, input_token_index, lowercase):
+        """ Generate feature matrices based on one-hot vectorization for input texts by mini-batches.
+
+        This generator is used in the prediction process by means of the trained neural model. Each text is a unicode
+        string in which all tokens are separated by spaces. It generates a 3-D array (numpy.ndarray object), using
+        one-hot enconding (first dimension is index of text in the mini-batch, second dimension is a timestep, or token
+        position in this text, and third dimension is index of this token in the input vocabulary).
+
+        :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
+        :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
+        :param max_encoder_seq_length: maximal length of any input text.
+        :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
+        :param lowercase: the need to bring all tokens of all texts to the lowercase.
+
+        :return the 3-D array representation of input mini-batch data.
+
+        """
+        n = len(input_texts)
+        n_batches = n // batch_size
+        while (n_batches * batch_size) < n:
+            n_batches += 1
+        start_pos = 0
+        for batch_ind in range(n_batches - 1):
+            end_pos = start_pos + batch_size
+            encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
+                                          dtype=np.float32)
+            for i, input_text in enumerate(input_texts[start_pos:end_pos]):
+                for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
+                    if t >= max_encoder_seq_length:
+                        break
+                    encoder_input_data[i, t, input_token_index[char]] = 1.0
+            start_pos = end_pos
+            yield encoder_input_data
+        end_pos = n
+        encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
+                                      dtype=np.float32)
+        for i, input_text in enumerate(input_texts[start_pos:end_pos]):
+            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
+                if t >= max_encoder_seq_length:
+                    break
+                encoder_input_data[i, t, input_token_index[char]] = 1.0
+        yield encoder_input_data

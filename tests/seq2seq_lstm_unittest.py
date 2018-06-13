@@ -28,6 +28,185 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         if os.path.isfile(self.model_name):
             os.remove(self.model_name)
 
+    def test_generate_data_for_training(self):
+        input_texts = [
+            u'a b c',
+            u'a c',
+            u'0 1 b',
+            u'b a',
+            u'b c'
+        ]
+        target_texts = [
+            u'а б а 2',
+            u'2 3',
+            u'а б а',
+            u'б а',
+            u'б 3'
+        ]
+        batch_size = 2
+        max_encoder_seq_length = 3
+        max_decoder_seq_length = 6
+        input_token_index = {u'0': 0, u'1': 1, u'a': 2, u'b': 3, u'c': 4}
+        target_token_index = {u'\t': 0, u'\n': 1, u'2': 2, u'3': 3, u'а': 4, u'б': 5}
+        true_batches = [
+            (
+                [
+                    np.array([
+                        [
+                            [0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0]
+                        ],
+                        [
+                            [0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0]
+                        ]
+                    ]),
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        ]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            ),
+            (
+                [
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0]
+                        ],
+                        [
+                            [0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0]
+                        ]
+                    ]),
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        ]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            ),
+            (
+                [
+                    np.array([
+                        [
+                            [0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                    ]),
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                ])
+            )
+        ]
+        predicted_batches = list(Seq2SeqLSTM.generate_data_for_training(
+            input_texts=input_texts, target_texts=target_texts, batch_size=batch_size,
+            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
+            input_token_index=input_token_index, target_token_index=target_token_index, lowercase=False))
+        self.assertEqual(len(predicted_batches), len(true_batches))
+        for batch_ind in range(len(true_batches)):
+            self.assertIsInstance(predicted_batches[batch_ind], tuple, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertEqual(len(predicted_batches[batch_ind]), 2, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batches[batch_ind][0], list, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batches[batch_ind][1], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertEqual(len(predicted_batches[batch_ind][0]), 2, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batches[batch_ind][0][0], np.ndarray,
+                                  msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batches[batch_ind][0][1], np.ndarray,
+                                  msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batches[batch_ind][0][0], true_batches[batch_ind][0][0]),
+                            msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batches[batch_ind][0][1], true_batches[batch_ind][0][1]),
+                            msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batches[batch_ind][1], true_batches[batch_ind][1]),
+                            msg=u'batch_ind={0}'.format(batch_ind))
+
     def test_creation(self):
         seq2seq = Seq2SeqLSTM(batch_size=128, epochs=200, latent_dim=500, validation_split=0.1, decay=0.2, dropout=0.3,
                               recurrent_dropout=0.35, grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2,
@@ -62,7 +241,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Input and target texts for training are the Python tuples. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
         seq2seq = Seq2SeqLSTM()
-        res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
+        res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
@@ -108,7 +287,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Input and target texts for training are the Python lists. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
         seq2seq = Seq2SeqLSTM()
-        res = seq2seq.fit(list(input_texts_for_training), list(target_texts_for_training))
+        res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
@@ -365,7 +544,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
                     target_texts.append(TestSeq2SeqLSTM.tokenize_text(new_target_text))
                 cur_line = fp.readline()
                 line_idx += 1
-        return tuple(input_texts), tuple(target_texts)
+        return input_texts, target_texts
 
     @staticmethod
     def tokenize_text(src):
@@ -373,7 +552,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         for cur in src.split():
             tokens += list(cur)
             tokens.append('<space>')
-        return tokens[:-1]
+        return u' '.join(tokens[:-1])
 
     @staticmethod
     def estimate(predicted_texts, true_texts):
