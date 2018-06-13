@@ -4,9 +4,7 @@ Seq2Seq-LSTM is a sequence-to-sequence classifier which has the sklearn-like int
 
 Developing of this module was inspired by this tutorial:
 
-**A ten-minute introduction to sequence-to-sequence learning in Keras**
-_Francois Chollet_
-https://blog.keras.io/a-ten-minute-introduction-to-sequence-to-sequence-learning-in-keras.html
+_Francois Chollet_, **A ten-minute introduction to sequence-to-sequence learning in Keras**, https://blog.keras.io/a-ten-minute-introduction-to-sequence-to-sequence-learning-in-keras.html
 
 Project goal is creating a simple Python package with the sklearn-like interface for solution of different seq2seq tasks:
 machine translation, question answering, decoding phonemes sequence into the word sequence, etc.
@@ -37,4 +35,6 @@ You can also run the tests
 ```
 python setup.py test
 ```
+
+The Russian-English sentence pairs from the Tatoeba Project have been used as data for unit tests (see http://www.manythings.org/anki/).
 
