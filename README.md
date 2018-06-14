@@ -50,5 +50,5 @@ python demo/seq2seq_lstm_demo.py
 
 In this demo, the Seq2Seq-LSTM learns to translate the sentences from English into Russian.
 
-The Russian-English sentence pairs from the Tatoeba Project have been used as data for unit tests (see http://www.manythings.org/anki/).
+The Russian-English sentence pairs from the Tatoeba Project have been used as data for unit tests and demo script (see http://www.manythings.org/anki/).
 
