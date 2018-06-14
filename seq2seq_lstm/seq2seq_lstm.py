@@ -289,6 +289,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             return np.array(texts, dtype=object)
         return texts
 
+    def fit_predict(self, X, y, **kwargs):
+        return self.fit(X, y, **kwargs).predict(X)
+
     def load_weights(self, weights_as_bytes):
         """ Load weights of neural model from the binary data.
 

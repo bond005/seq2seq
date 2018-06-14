@@ -3,6 +3,7 @@
 import codecs
 import os
 import pickle
+import random
 import re
 import sys
 import unittest
@@ -252,10 +253,22 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Part of correctly predicted texts must be greater than 0.8. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.training_set_name)
         input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.testing_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=100, lr=1e-1, verbose=True)
-        seq2seq.fit(input_texts_for_training, target_texts_for_training,
-                    eval_set=(input_texts_for_testing, target_texts_for_testing))
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=100, lr=1e-2, decay=0.5, verbose=True)
+        predicted_texts = seq2seq.fit_predict(input_texts_for_training, target_texts_for_training,
+                                              eval_set=(input_texts_for_testing, target_texts_for_testing))
+        indices = list(range(len(predicted_texts)))
+        random.shuffle(indices)
+        print(u'')
+        print(u'Some predicted texts from training set:')
+        for ind in range(min(5, len(predicted_texts))):
+            print(u'    ' + self.detokenize_text(predicted_texts[indices[ind]]))
         predicted_texts = seq2seq.predict(input_texts_for_testing)
+        indices = list(range(len(predicted_texts)))
+        random.shuffle(indices)
+        print(u'')
+        print(u'Some predicted texts from evaluation set:')
+        for ind in range(min(5, len(predicted_texts))):
+            print(u'    ' + self.detokenize_text(predicted_texts[indices[ind]]))
         self.assertIsInstance(predicted_texts, list)
         self.assertEqual(len(predicted_texts), len(input_texts_for_testing))
         self.assertGreater(self.estimate(predicted_texts, target_texts_for_testing), 0.8)
@@ -278,7 +291,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_check_X_negative001(self):
         """ All texts must be a string and have a `split` method. """
-        texts = ['123', 4, '567']
+        texts = [u'123', 4, u'567']
         true_err_msg = re.escape(u'Sample {0} of `{1}` is wrong! This sample have not the `split` method.'.format(
             1, u'X'))
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -323,7 +336,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
     def test_serialize_trained(self):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.training_set_name)
         input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.testing_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=10, lr=1e-1)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=10, lr=1e-2)
         seq2seq.fit(input_texts_for_training, target_texts_for_training,
                     eval_set=(input_texts_for_testing, target_texts_for_testing))
         predicted_texts_1 = seq2seq.predict(input_texts_for_testing)
@@ -362,15 +375,25 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         tokens = list()
         for cur in src.split():
             tokens += list(cur)
-            tokens.append('<space>')
+            tokens.append(u'<space>')
         return u' '.join(tokens[:-1])
+
+    @staticmethod
+    def detokenize_text(src):
+        new_text = u''
+        for cur_token in src.split():
+            if cur_token == u'<space>':
+                new_text += u' '
+            else:
+                new_text += cur_token
+        return new_text.strip()
 
     @staticmethod
     def estimate(predicted_texts, true_texts):
         n_err = 0
         n_total = len(predicted_texts)
-        for ind in range(n_total):
-            if predicted_texts[ind] != true_texts[ind]:
+        for i in range(n_total):
+            if TestSeq2SeqLSTM.detokenize_text(predicted_texts[i]) != TestSeq2SeqLSTM.detokenize_text(true_texts[i]):
                 n_err += 1
         return (1.0 - (n_err / float(n_total)))
 
