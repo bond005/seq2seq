@@ -22,10 +22,12 @@ import copy
 import os
 import tempfile
 
+import keras.backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.models import Model
 from keras.layers import Input, LSTM, Dense
 from keras.optimizers import RMSprop
+from keras.utils import Sequence
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
@@ -33,9 +35,8 @@ from sklearn.utils.validation import check_is_fitted
 
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
-    def __init__(self, batch_size=256, epochs=100, latent_dim=256, validation_split=0.2, decay=0.1, dropout=0.5,
-                 recurrent_dropout=0.5, grad_clipping=100.0, lr=0.001, rho=0.9, epsilon=None, lowercase=True,
-                 verbose=False):
+    def __init__(self, batch_size=128, epochs=100, latent_dim=256, validation_split=0.2, decay=0.1, grad_clipping=100.0,
+                 lr=0.001, rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False):
         """ Create a new object with specified parameters.
 
         :param batch_size: maximal number of texts or text pairs in the single mini-batch (positive integer).
@@ -44,14 +45,10 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :param validation_split: the ratio of the evaluation set size to the total number of samples (float between 0
         and 1).
         :param decay: learning rate decay over each update (non-negative float).
-        :param dropout: fraction of the units to drop for the linear transformation of the inputs (float between 0
-        and 1).
-        :param recurrent_dropout: fraction of the units to drop for the linear transformation of the recurrent state
-        (float between 0 and 1).
         :param grad_clipping: maximally permissible gradient norm (positive float).
         :param lr: learning rate (positive float)
         :param rho: parameter of the RMSprop algorithm (non-negative float).
-        :param epsilon: fuzzy factor (if None, default K.epsilon() is used).
+        :param epsilon: fuzzy factor.
         :param lowercase: need to bring all tokens of all texts to the lowercase.
         :param verbose: need to printing a training log.
 
@@ -61,8 +58,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.latent_dim = latent_dim
         self.validation_split = validation_split
         self.decay = decay
-        self.dropout = dropout
-        self.recurrent_dropout = recurrent_dropout
         self.grad_clipping = grad_clipping
         self.lr = lr
         self.rho = rho
@@ -95,34 +90,34 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.check_X(y, u'y')
         if len(X) != len(y):
             raise ValueError(u'`X` does not correspond to `y`! {0} != {1}.'.format(len(X), len(y)))
-        if self.validation_split is None:
-            if 'eval_set' in kwargs:
-                if (not isinstance(kwargs['eval_set'], tuple)) and (not isinstance(kwargs['eval_set'], list)):
-                    raise ValueError(u'`eval_set` must be `{0}` or `{1}`, not `{2}`!'.format(
-                        type((1, 2)), type([1, 2]), type(kwargs['eval_set'])))
-                if len(kwargs['eval_set']) != 2:
-                    raise ValueError(u'`eval_set` must be a two-element sequence! {0} != 2'.format(
-                        len(kwargs['eval_set'])))
-                self.check_X(kwargs['eval_set'][0], u'X_eval_set')
-                self.check_X(kwargs['eval_set'][1], u'y_eval_set')
-                if len(kwargs['eval_set'][0]) != len(kwargs['eval_set'][1]):
-                    raise ValueError(u'`X_eval_set` does not correspond to `y_eval_set`! {0} != {1}.'.format(
-                        len(kwargs['eval_set'][0]), len(kwargs['eval_set'][1])))
-                X_eval_set = kwargs['eval_set'][0]
-                y_eval_set = kwargs['eval_set'][1]
-            else:
+        if 'eval_set' in kwargs:
+            if (not isinstance(kwargs['eval_set'], tuple)) and (not isinstance(kwargs['eval_set'], list)):
+                raise ValueError(u'`eval_set` must be `{0}` or `{1}`, not `{2}`!'.format(
+                    type((1, 2)), type([1, 2]), type(kwargs['eval_set'])))
+            if len(kwargs['eval_set']) != 2:
+                raise ValueError(u'`eval_set` must be a two-element sequence! {0} != 2'.format(
+                    len(kwargs['eval_set'])))
+            self.check_X(kwargs['eval_set'][0], u'X_eval_set')
+            self.check_X(kwargs['eval_set'][1], u'y_eval_set')
+            if len(kwargs['eval_set'][0]) != len(kwargs['eval_set'][1]):
+                raise ValueError(u'`X_eval_set` does not correspond to `y_eval_set`! {0} != {1}.'.format(
+                    len(kwargs['eval_set'][0]), len(kwargs['eval_set'][1])))
+            X_eval_set = kwargs['eval_set'][0]
+            y_eval_set = kwargs['eval_set'][1]
+        else:
+            if self.validation_split is None:
                 X_eval_set = None
                 y_eval_set = None
-        else:
-            n_eval_set = int(round(len(X) * self.validation_split))
-            if n_eval_set < 1:
-                raise ValueError(u'`validation_split` is too small! There are no samples for evaluation!')
-            if n_eval_set >= len(X):
-                raise ValueError(u'`validation_split` is too large! There are no samples for training!')
-            X_eval_set = X[-n_eval_set:-1]
-            y_eval_set = y[-n_eval_set:-1]
-            X = X[:-n_eval_set]
-            y = y[:-n_eval_set]
+            else:
+                n_eval_set = int(round(len(X) * self.validation_split))
+                if n_eval_set < 1:
+                    raise ValueError(u'`validation_split` is too small! There are no samples for evaluation!')
+                if n_eval_set >= len(X):
+                    raise ValueError(u'`validation_split` is too large! There are no samples for training!')
+                X_eval_set = X[-n_eval_set:-1]
+                y_eval_set = y[-n_eval_set:-1]
+                X = X[:-n_eval_set]
+                y = y[:-n_eval_set]
         input_characters = set()
         target_characters = set()
         max_encoder_seq_length = 0
@@ -185,8 +180,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.max_encoder_seq_length_ = max_encoder_seq_length
         self.max_decoder_seq_length_ = max_decoder_seq_length
         encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-        encoder = LSTM(self.latent_dim, return_state=True, dropout=self.dropout,
-                       recurrent_dropout=self.recurrent_dropout)
+        encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True)
         encoder_outputs, state_h, state_c = encoder(encoder_inputs)
         encoder_states = [state_h, state_c]
         decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
@@ -198,28 +192,26 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         optimizer = RMSprop(lr=self.lr, rho=self.rho, epsilon=self.epsilon, decay=self.decay,
                             clipnorm=self.grad_clipping)
         model.compile(optimizer=optimizer, loss='categorical_crossentropy')
-        n_batches_for_training = len(X) // self.batch_size
-        while (n_batches_for_training * self.batch_size) < len(X):
-            n_batches_for_training += 1
+        training_set_generator = TextPairSequence(
+            input_texts=X, target_texts=y,
+            batch_size=self.batch_size,
+            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
+            input_token_index=self.input_token_index_, target_token_index=self.target_token_index_,
+            lowercase=self.lowercase
+        )
         if (X_eval_set is not None) and (y_eval_set is not None):
-            n_batches_for_validation = len(X_eval_set) // self.batch_size
-            while (n_batches_for_validation * self.batch_size) < len(X_eval_set):
-                n_batches_for_validation += 1
-            generate_data_for_validation = Seq2SeqLSTM.generate_data_for_training(
+            evaluation_set_generator = TextPairSequence(
                 input_texts=X_eval_set, target_texts=y_eval_set,
                 batch_size=self.batch_size,
-                max_encoder_seq_length=max_encoder_seq_length,
-                max_decoder_seq_length=max_decoder_seq_length,
-                input_token_index=self.input_token_index_,
-                target_token_index=self.target_token_index_,
+                max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
+                input_token_index=self.input_token_index_, target_token_index=self.target_token_index_,
                 lowercase=self.lowercase
             )
             callbacks = [
                 EarlyStopping(patience=3, verbose=(1 if self.verbose else 0))
             ]
         else:
-            n_batches_for_validation = None
-            generate_data_for_validation = None
+            evaluation_set_generator = None
             callbacks = []
         tmp_weights_name = self.get_temp_name()
         try:
@@ -228,21 +220,10 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                                 save_weights_only=True)
             )
             model.fit_generator(
-                generator=Seq2SeqLSTM.generate_data_for_training(
-                    input_texts=X, target_texts=y,
-                    batch_size=self.batch_size,
-                    max_encoder_seq_length=max_encoder_seq_length,
-                    max_decoder_seq_length=max_decoder_seq_length,
-                    input_token_index=self.input_token_index_,
-                    target_token_index=self.target_token_index_,
-                    lowercase=self.lowercase
-                ),
-                steps_per_epoch=n_batches_for_training,
+                generator=training_set_generator,
                 epochs=self.epochs, verbose=(1 if self.verbose else 0),
                 shuffle=True,
-                initial_epoch=0,
-                validation_steps=n_batches_for_validation,
-                validation_data=generate_data_for_validation,
+                validation_data=evaluation_set_generator,
                 callbacks=callbacks
             )
             if os.path.isfile(tmp_weights_name):
@@ -263,6 +244,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             [decoder_outputs] + decoder_states)
         self.reverse_target_char_index_ = dict(
             (i, char) for char, i in self.target_token_index_.items())
+        return self
 
     def predict(self, X):
         """ Predict resulting sequences of tokens by source sequences with a trained seq2seq model.
@@ -300,6 +282,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     target_seq[0, 0, sampled_token_index] = 1.0
                     states_value = [h, c]
                 texts.append(u' '.join(decoded_sentence))
+            del input_seq
         if isinstance(X, tuple):
             return tuple(texts)
         if isinstance(X, np.ndarray):
@@ -326,8 +309,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         tmp_weights_name = self.get_temp_name()
         try:
             encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-            encoder = LSTM(self.latent_dim, return_state=True, dropout=self.dropout,
-                           recurrent_dropout=self.recurrent_dropout)
+            encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True)
             encoder_outputs, state_h, state_c = encoder(encoder_inputs)
             encoder_states = [state_h, state_c]
             decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
@@ -347,11 +329,11 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 [decoder_outputs] + decoder_states)
             with open(tmp_weights_name, 'wb') as fp:
                 fp.write(weights_as_bytes[0])
-            self.encoder_model_.load_weights(weights_as_bytes)
+            self.encoder_model_.load_weights(tmp_weights_name)
             os.remove(tmp_weights_name)
             with open(tmp_weights_name, 'wb') as fp:
                 fp.write(weights_as_bytes[1])
-            self.decoder_model_.load_weights(weights_as_bytes)
+            self.decoder_model_.load_weights(tmp_weights_name)
             os.remove(tmp_weights_name)
         finally:
             if os.path.isfile(tmp_weights_name):
@@ -395,9 +377,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         """
         return {'batch_size': self.batch_size, 'epochs': self.epochs, 'latent_dim': self.latent_dim,
-                'decay': self.decay, 'dropout': self.dropout, 'recurrent_dropout': self.recurrent_dropout,
-                'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho, 'epsilon': self.epsilon,
-                'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping}
+                'decay': self.decay, 'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho,
+                'epsilon': self.epsilon, 'lowercase': self.lowercase, 'verbose': self.verbose,
+                'grad_clipping': self.grad_clipping}
 
     def set_params(self, **params):
         """ Set parameters for this estimator.
@@ -451,8 +433,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         if not isinstance(new_params, dict):
             raise ValueError(u'`new_params` is wrong! Expected {0}.'.format(type({0: 1})))
         self.check_params(**new_params)
-        expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'decay', 'dropout', 'recurrent_dropout',
-                               'validation_split', 'lr', 'rho', 'epsilon', 'lowercase', 'verbose', 'grad_clipping'}
+        expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'decay', 'validation_split', 'lr', 'rho',
+                               'epsilon', 'lowercase', 'verbose', 'grad_clipping'}
         params_after_training = {'weights', 'input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
                                  'max_encoder_seq_length_', 'max_decoder_seq_length_'}
         is_fitted = len(set(new_params.keys())) > len(expected_param_keys)
@@ -463,8 +445,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.epochs = new_params['epochs']
         self.latent_dim = new_params['latent_dim']
         self.decay = new_params['decay']
-        self.dropout = new_params['dropout']
-        self.recurrent_dropout = new_params['recurrent_dropout']
         self.validation_split = new_params['validation_split']
         self.lr = new_params['lr']
         self.rho = new_params['rho']
@@ -573,19 +553,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     type(1.5), type(kwargs['validation_split'])))
             if (kwargs['validation_split'] <= 0.0) or (kwargs['validation_split'] >= 1.0):
                 raise ValueError(u'`validation_split` must be in interval (0.0, 1.0)!')
-        if 'dropout' not in kwargs:
-            raise ValueError(u'`dropout` is not found!')
-        if not isinstance(kwargs['dropout'], float):
-            raise ValueError(u'`dropout` must be `{0}`, not `{1}`.'.format(type(1.5), type(kwargs['dropout'])))
-        if (kwargs['dropout'] < 0.0) or (kwargs['dropout'] >= 1.0):
-            raise ValueError(u'`dropout` must be in interval [0.0, 1.0)!')
-        if 'recurrent_dropout' not in kwargs:
-            raise ValueError(u'`recurrent_dropout` is not found!')
-        if not isinstance(kwargs['recurrent_dropout'], float):
-            raise ValueError(u'`recurrent_dropout` must be `{0}`, not `{1}`.'.format(type(1.5),
-                                                                                     type(kwargs['recurrent_dropout'])))
-        if (kwargs['recurrent_dropout'] < 0.0) or (kwargs['recurrent_dropout'] >= 1.0):
-            raise ValueError(u'`recurrent_dropout` must be in interval [0.0, 1.0)!')
         if 'decay' not in kwargs:
             raise ValueError(u'`decay` is not found!')
         if not isinstance(kwargs['decay'], float):
@@ -613,11 +580,10 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             raise ValueError(u'`rho` must be a non-negative floating-point value!')
         if 'epsilon' not in kwargs:
             raise ValueError(u'`epsilon` is not found!')
-        if kwargs['epsilon'] is not None:
-            if not isinstance(kwargs['epsilon'], float):
-                raise ValueError(u'`epsilon` must be `{0}`, not `{1}`.'.format(type(1.5), type(kwargs['epsilon'])))
-            if kwargs['epsilon'] < 0.0:
-                raise ValueError(u'`epsilon` must be a non-negative floating-point value!')
+        if not isinstance(kwargs['epsilon'], float):
+            raise ValueError(u'`epsilon` must be `{0}`, not `{1}`.'.format(type(1.5), type(kwargs['epsilon'])))
+        if kwargs['epsilon'] < 0.0:
+            raise ValueError(u'`epsilon` must be a non-negative floating-point value!')
 
     @staticmethod
     def check_X(X, checked_object_name=u'X'):
@@ -666,80 +632,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         return file_name
 
     @staticmethod
-    def generate_data_for_training(input_texts, target_texts, batch_size, max_encoder_seq_length,
-                                   max_decoder_seq_length, input_token_index, target_token_index, lowercase):
-        """ Generate feature matrices based on one-hot vectorization for pairs of texts by mini-batches.
-
-        This generator is used in the training process of the neural model (see the `fit_generator` method of the Keras
-        `Model` object). Each text (input or target one) is a unicode string in which all tokens are separated by
-        spaces. Each pair of texts generates three 3-D arrays (numpy.ndarray objects):
-
-        1) one-hot vectorization of corresponded input text (first dimension is index of text in the mini-batch, second
-        dimension is a timestep, or token position in this text, and third dimension is index of this token in the input
-        vocabulary);
-
-        2) one-hot vectorization of corresponded target text (first dimension is index of text in the mini-batch, second
-        dimension is a timestep, or token position in this text, and third dimension is index of this token in the
-        target vocabulary);
-
-        3) array is the same as second one but offset by one timestep.
-
-        In the training process first and second array will be fed into the neural model, and third array will be
-        considered as its desired output.
-
-        :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
-        :param target_texts: sequence (list, tuple or numpy.ndarray) of target texts.
-        :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
-        :param max_encoder_seq_length: maximal length of any input text.
-        :param max_decoder_seq_length: maximal length of any target text.
-        :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
-        :param target_token_index: the special index for one-hot encoding any target text as numerical feature matrix.
-        :param lowercase: the need to bring all tokens of all texts to the lowercase.
-
-        :return the two-element tuple with input and output mini-batch data for the neural model training respectively.
-
-        """
-        n = len(input_texts)
-        n_batches = n // batch_size
-        while (n_batches * batch_size) < n:
-            n_batches += 1
-        start_pos = 0
-        for batch_ind in range(n_batches - 1):
-            end_pos = start_pos + batch_size
-            encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
-                                          dtype=np.float32)
-            decoder_input_data = np.zeros((batch_size, max_decoder_seq_length, len(target_token_index)),
-                                          dtype=np.float32)
-            decoder_target_data = np.zeros((batch_size, max_decoder_seq_length, len(target_token_index)),
-                                           dtype=np.float32)
-            for i, (input_text, target_text) in enumerate(zip(input_texts[start_pos:end_pos],
-                                                              target_texts[start_pos:end_pos])):
-                for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-                    encoder_input_data[i, t, input_token_index[char]] = 1.0
-                for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, lowercase) + [u'\n']):
-                    decoder_input_data[i, t, target_token_index[char]] = 1.0
-                    if t > 0:
-                        decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
-            start_pos = end_pos
-            yield ([encoder_input_data, decoder_input_data], decoder_target_data)
-        end_pos = n
-        encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
-                                      dtype=np.float32)
-        decoder_input_data = np.zeros((end_pos - start_pos, max_decoder_seq_length, len(target_token_index)),
-                                      dtype=np.float32)
-        decoder_target_data = np.zeros((end_pos - start_pos, max_decoder_seq_length, len(target_token_index)),
-                                       dtype=np.float32)
-        for i, (input_text, target_text) in enumerate(zip(input_texts[start_pos:end_pos],
-                                                          target_texts[start_pos:end_pos])):
-            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-                encoder_input_data[i, t, input_token_index[char]] = 1.0
-            for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, lowercase) + [u'\n']):
-                decoder_input_data[i, t, target_token_index[char]] = 1.0
-                if t > 0:
-                    decoder_target_data[i, t - 1, target_token_index[char]] = 1.0
-        yield ([encoder_input_data, decoder_input_data], decoder_target_data)
-
-    @staticmethod
     def generate_data_for_prediction(input_texts, batch_size, max_encoder_seq_length, input_token_index, lowercase):
         """ Generate feature matrices based on one-hot vectorization for input texts by mini-batches.
 
@@ -782,3 +674,82 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     break
                 encoder_input_data[i, t, input_token_index[char]] = 1.0
         yield encoder_input_data
+
+
+class TextPairSequence(Sequence):
+    """ Object for fitting to a sequence of text pairs without calculating features for all these pairs in memory.
+
+    """
+    def __init__(self, input_texts, target_texts, batch_size, max_encoder_seq_length, max_decoder_seq_length,
+                 input_token_index, target_token_index, lowercase):
+        """ Generate feature matrices based on one-hot vectorization for pairs of texts by mini-batches.
+
+        This generator is used in the training process of the neural model (see the `fit_generator` method of the Keras
+        `Model` object). Each text (input or target one) is a unicode string in which all tokens are separated by
+        spaces. Each pair of texts generates three 3-D arrays (numpy.ndarray objects):
+
+        1) one-hot vectorization of corresponded input text (first dimension is index of text in the mini-batch, second
+        dimension is a timestep, or token position in this text, and third dimension is index of this token in the input
+        vocabulary);
+
+        2) one-hot vectorization of corresponded target text (first dimension is index of text in the mini-batch, second
+        dimension is a timestep, or token position in this text, and third dimension is index of this token in the
+        target vocabulary);
+
+        3) array is the same as second one but offset by one timestep.
+
+        In the training process first and second array will be fed into the neural model, and third array will be
+        considered as its desired output.
+
+        :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
+        :param target_texts: sequence (list, tuple or numpy.ndarray) of target texts.
+        :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
+        :param max_encoder_seq_length: maximal length of any input text.
+        :param max_decoder_seq_length: maximal length of any target text.
+        :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
+        :param target_token_index: the special index for one-hot encoding any target text as numerical feature matrix.
+        :param lowercase: the need to bring all tokens of all texts to the lowercase.
+
+        :return the two-element tuple with input and output mini-batch data for the neural model training respectively.
+
+        """
+        self.input_texts = input_texts
+        self.target_texts = target_texts
+        self.batch_size = batch_size
+        self.max_encoder_seq_length = max_encoder_seq_length
+        self.max_decoder_seq_length = max_decoder_seq_length
+        self.input_token_index = input_token_index
+        self.target_token_index = target_token_index
+        self.lowercase = lowercase
+        self.n_text_pairs = len(self.input_texts)
+        self.n_batches = self.n_text_pairs // self.batch_size
+        while (self.n_batches * self.batch_size) < self.n_text_pairs:
+            self.n_batches += 1
+
+    def __len__(self):
+        return self.n_batches
+
+    def __getitem__(self, idx):
+        start_pos = idx * self.batch_size
+        end_pos = start_pos + self.batch_size
+        encoder_input_data = np.zeros((self.batch_size, self.max_encoder_seq_length, len(self.input_token_index)),
+                                      dtype=np.float32)
+        decoder_input_data = np.zeros((self.batch_size, self.max_decoder_seq_length, len(self.target_token_index)),
+                                      dtype=np.float32)
+        decoder_target_data = np.zeros((self.batch_size, self.max_decoder_seq_length, len(self.target_token_index)),
+                                       dtype=np.float32)
+        idx_in_batch = 0
+        for src_text_idx in range(start_pos, end_pos):
+            prep_text_idx = src_text_idx
+            while prep_text_idx >= self.n_text_pairs:
+                prep_text_idx = prep_text_idx - self.n_text_pairs
+            input_text = self.input_texts[prep_text_idx]
+            target_text = self.target_texts[prep_text_idx]
+            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, self.lowercase)):
+                encoder_input_data[idx_in_batch, t, self.input_token_index[char]] = 1.0
+            for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, self.lowercase) + [u'\n']):
+                decoder_input_data[idx_in_batch, t, self.target_token_index[char]] = 1.0
+                if t > 0:
+                    decoder_target_data[idx_in_batch, t - 1, self.target_token_index[char]] = 1.0
+            idx_in_batch += 1
+        return [encoder_input_data, decoder_input_data], decoder_target_data

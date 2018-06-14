@@ -14,7 +14,7 @@ setup(
     name='seq2seq-lstm',
     version='6.2.0a0',
     packages=['seq2seq_lstm'],
-    description='Grapheme to phoneme module based on Seq2Seq',
+    description='Sequence-to-sequence classifier based on LSTM with the simple sklearn-like interface',
     long_description=long_description,
     url='https://github.com/bond005/seq2seq',
     author='Ivan Bondarenko',
