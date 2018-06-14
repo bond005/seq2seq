@@ -83,7 +83,7 @@ def main():
     input_texts_for_testing, target_texts_for_testing = load_text_pairs(
         os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_testing.txt')
     )
-    print(u'There are {0} text pairs in the testing data.'.format(len(input_texts_for_training)))
+    print(u'There are {0} text pairs in the testing data.'.format(len(input_texts_for_testing)))
     print(u'Some samples of these text pairs:')
     indices = list(range(len(input_texts_for_testing)))
     random.shuffle(indices)
