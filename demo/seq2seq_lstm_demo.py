@@ -94,7 +94,7 @@ def main():
     print(u'')
 
     seq2seq = Seq2SeqLSTM(validation_split=0.1, epochs=200, lr=1e-2, decay=1e-5, verbose=True)
-    seq2seq.fit(input_texts_for_training_, target_texts_for_training_)
+    seq2seq.fit(input_texts_for_training, target_texts_for_training)
     print(u'')
     print(u'Training has been successfully finished.')
 
