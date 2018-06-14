@@ -74,7 +74,7 @@ def main():
     del target_texts_for_training_
     print(u'There are {0} text pairs in the training data.'.format(len(input_texts_for_training)))
     print(u'Some samples of these text pairs:')
-    for ind in range(5):
+    for ind in range(10):
         input_text = input_texts_for_training[ind]
         target_text = target_texts_for_training[ind]
         print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
@@ -85,9 +85,9 @@ def main():
     )
     print(u'There are {0} text pairs in the testing data.'.format(len(input_texts_for_training)))
     print(u'Some samples of these text pairs:')
-    indices = list(range(len(input_texts_for_training)))
+    indices = list(range(len(input_texts_for_testing)))
     random.shuffle(indices)
-    for ind in indices[:5]:
+    for ind in indices[:10]:
         input_text = input_texts_for_testing[ind]
         target_text = target_texts_for_testing[ind]
         print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
@@ -102,7 +102,7 @@ def main():
     sentence_correct = estimate(predicted_texts, target_texts_for_testing)
     print(u'{0} texts have been predicted.'.format(len(predicted_texts)))
     print(u'Some samples of predicted text pairs:')
-    for ind in indices[:5]:
+    for ind in indices[:10]:
         input_text = input_texts_for_testing[ind]
         target_text = predicted_texts[ind]
         print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
