@@ -54,6 +54,8 @@ def estimate(predicted_texts, true_texts):
     n_err = 0
     n_total = len(predicted_texts)
     for i in range(n_total):
+        pred_ = detokenize_text(predicted_texts[i]).lower()
+        true_ = detokenize_text(true_texts[i]).lower()
         if detokenize_text(predicted_texts[i]) != detokenize_text(true_texts[i]):
             n_err += 1
     return 1.0 - (n_err / float(n_total))
