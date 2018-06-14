@@ -74,6 +74,7 @@ def main():
         target_texts_for_training.append(target_texts_for_training_[ind])
     del input_texts_for_training_
     del target_texts_for_training_
+    print(u'')
     print(u'There are {0} text pairs in the training data.'.format(len(input_texts_for_training)))
     print(u'Some samples of these text pairs:')
     for ind in range(10):
