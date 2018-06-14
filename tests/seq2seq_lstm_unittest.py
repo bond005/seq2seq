@@ -21,9 +21,8 @@ except:
 
 class TestSeq2SeqLSTM(unittest.TestCase):
     def setUp(self):
-        self.training_set_name = os.path.join(os.path.dirname(__file__), 'testdata', 'eng_rus_for_training.txt')
-        self.testing_set_name = os.path.join(os.path.dirname(__file__), 'testdata', 'eng_rus_for_testing.txt')
-        self.model_name = os.path.join(os.path.dirname(__file__), 'testdata', 'seq2seq_lstm.pkl')
+        self.data_set_name = os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_testing.txt')
+        self.model_name = os.path.join(os.path.dirname(__file__), '..', 'data', 'seq2seq_lstm.pkl')
 
     def tearDown(self):
         if os.path.isfile(self.model_name):
@@ -56,7 +55,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_positive01(self):
         """ Input and target texts for training are the Python tuples. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(verbose=True, lr=1e-2)
         res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
@@ -79,7 +78,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_positive02(self):
         """ Input and target texts for training are the 1-D numpy arrays. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(lr=1e-2)
         res = seq2seq.fit(np.array(input_texts_for_training), np.array(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
@@ -102,7 +101,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_positive03(self):
         """ Input and target texts for training are the Python lists. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(lr=1e-2)
         res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
         self.assertIsInstance(res, Seq2SeqLSTM)
@@ -125,7 +124,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_positive04(self):
         """ Early stopping is not used in the training process. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2)
         res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
         self.assertIsInstance(res, Seq2SeqLSTM)
@@ -148,7 +147,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_positive05(self):
         """ Prepared evaluation set is used in the early stopping criterion. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2)
         res = seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                           eval_set=(input_texts_for_training[-20:], target_texts_for_training[-20:]))
@@ -172,7 +171,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative01(self):
         """ Object with input texts is not one of the basic sequence types. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X'))
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -180,7 +179,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative02(self):
         """ Object with target texts is not one of the basic sequence types. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'y'))
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -188,7 +187,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative03(self):
         """ Number of input texts does not equal to number of target texts. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`X` does not correspond to `y`! {0} != {1}.'.format(
             len(input_texts_for_training), len(target_texts_for_training) - 1))
@@ -197,7 +196,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative04(self):
         """ Some parameter of the `Seq2SeqLSTM` object is wrong. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(batch_size=0)
         true_err_msg = re.escape(u'`batch_size` must be a positive number! 0 is not positive.')
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -205,7 +204,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative05(self):
         """ Special evaluation set is neither list nor tuple. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None)
         true_err_msg = re.escape(u'`eval_set` must be `{0}` or `{1}`, not `{2}`!'.format(
             type((1, 2)), type([1, 2]), type({1: 'a', 2: 'b'})))
@@ -215,7 +214,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative06(self):
         """ Special evaluation set is not a two-element tuple. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None)
         true_err_msg = re.escape(u'`eval_set` must be a two-element sequence! 3 != 2')
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -224,7 +223,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative07(self):
         """ Object with input texts in the special evaluation set is not one of the basic sequence types. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X_eval_set'))
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -233,7 +232,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative08(self):
         """ Object with target texts in the special evaluation set is not one of the basic sequence types. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'y_eval_set'))
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -242,7 +241,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_negative09(self):
         """ Number of input texts does not equal to number of target texts in the special evaluation set. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`X_eval_set` does not correspond to `y_eval_set`! 20 != 19.')
         with self.assertRaisesRegex(ValueError, true_err_msg):
@@ -251,38 +250,30 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_predict_positive001(self):
         """ Part of correctly predicted texts must be greater than 0.8. """
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.training_set_name)
-        input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.testing_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=100, lr=1e-2, decay=0.5, verbose=True)
-        predicted_texts = seq2seq.fit_predict(input_texts_for_training, target_texts_for_training,
-                                              eval_set=(input_texts_for_testing, target_texts_for_testing))
-        indices = list(range(len(predicted_texts)))
-        random.shuffle(indices)
-        print(u'')
-        print(u'Some predicted texts from training set:')
-        for ind in range(min(5, len(predicted_texts))):
-            print(u'    ' + self.detokenize_text(predicted_texts[indices[ind]]))
-        predicted_texts = seq2seq.predict(input_texts_for_testing)
-        indices = list(range(len(predicted_texts)))
-        random.shuffle(indices)
-        print(u'')
-        print(u'Some predicted texts from evaluation set:')
-        for ind in range(min(5, len(predicted_texts))):
-            print(u'    ' + self.detokenize_text(predicted_texts[indices[ind]]))
+        input_texts, target_texts = self.load_text_pairs(self.data_set_name)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=200, lr=1e-2, decay=1e-5, verbose=True)
+        predicted_texts = seq2seq.fit_predict(input_texts, target_texts)
         self.assertIsInstance(predicted_texts, list)
-        self.assertEqual(len(predicted_texts), len(input_texts_for_testing))
-        self.assertGreater(self.estimate(predicted_texts, target_texts_for_testing), 0.8)
+        self.assertEqual(len(predicted_texts), len(input_texts))
+        indices = list(range(len(predicted_texts)))
+        random.shuffle(indices)
+        print(u'')
+        print(u'Some predicted texts:')
+        for ind in range(min(5, len(predicted_texts))):
+            print(u'    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
+                  u'\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
+        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.8)
 
     def test_predict_negative001(self):
         """ Usage of the seq2seq model for prediction without training. """
-        input_texts_for_testing, _ = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_testing, _ = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None, epochs=20)
         with self.assertRaises(NotFittedError):
             _ = seq2seq.predict(input_texts_for_testing)
 
     def test_predict_negative002(self):
         """ Input texts for prediction are wrong. """
-        input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.testing_set_name)
+        input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None, epochs=20)
         seq2seq.fit(input_texts_for_testing, target_texts_for_testing)
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X'))
@@ -334,9 +325,21 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertTrue(another_seq2seq.verbose)
 
     def test_serialize_trained(self):
-        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.training_set_name)
-        input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.testing_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=10, lr=1e-2)
+        input_texts, target_texts = self.load_text_pairs(self.data_set_name)
+        indices = list(range(len(input_texts)))
+        random.shuffle(indices)
+        n = int(round(0.2 * len(indices)))
+        input_texts_for_training = []
+        target_texts_for_training = []
+        for ind in indices[:-n]:
+            input_texts_for_training.append(input_texts[ind])
+            target_texts_for_training.append(target_texts[ind])
+        input_texts_for_testing = []
+        target_texts_for_testing = []
+        for ind in indices[-n:]:
+            input_texts_for_testing.append(input_texts[ind])
+            target_texts_for_testing.append(target_texts[ind])
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=10, lr=1e-3, decay=0.0)
         seq2seq.fit(input_texts_for_training, target_texts_for_training,
                     eval_set=(input_texts_for_testing, target_texts_for_testing))
         predicted_texts_1 = seq2seq.predict(input_texts_for_testing)
@@ -395,7 +398,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         for i in range(n_total):
             if TestSeq2SeqLSTM.detokenize_text(predicted_texts[i]) != TestSeq2SeqLSTM.detokenize_text(true_texts[i]):
                 n_err += 1
-        return (1.0 - (n_err / float(n_total)))
+        return 1.0 - (n_err / float(n_total))
 
 
 class TestTextPairSequence(unittest.TestCase):

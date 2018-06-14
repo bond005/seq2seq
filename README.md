@@ -36,5 +36,19 @@ You can also run the tests
 python setup.py test
 ```
 
+To see the work of the Seq2Seq-LSTM on a large dataset, you can run a demo
+
+```
+demo/seq2seq_lstm_demo
+```
+
+or
+
+```
+python demo/seq2seq_lstm_demo.py
+```
+
+In this demo, the Seq2Seq-LSTM learns to translate the sentences from English into Russian.
+
 The Russian-English sentence pairs from the Tatoeba Project have been used as data for unit tests (see http://www.manythings.org/anki/).
 

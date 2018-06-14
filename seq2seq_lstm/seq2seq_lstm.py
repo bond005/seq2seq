@@ -35,7 +35,7 @@ from sklearn.utils.validation import check_is_fitted
 
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
-    def __init__(self, batch_size=128, epochs=100, latent_dim=256, validation_split=0.2, decay=0.1, grad_clipping=100.0,
+    def __init__(self, batch_size=128, epochs=100, latent_dim=256, validation_split=0.2, decay=0.0, grad_clipping=100.0,
                  lr=0.001, rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False):
         """ Create a new object with specified parameters.
 
@@ -208,7 +208,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 lowercase=self.lowercase
             )
             callbacks = [
-                EarlyStopping(patience=3, verbose=(1 if self.verbose else 0))
+                EarlyStopping(patience=5, verbose=(1 if self.verbose else 0))
             ]
         else:
             evaluation_set_generator = None

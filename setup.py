@@ -4,15 +4,16 @@ from setuptools import setup
 from codecs import open
 from os import path
 
+import seq2seq_lstm
+
 
 here = path.abspath(path.dirname(__file__))
-
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
     name='seq2seq-lstm',
-    version='6.2.0a0',
+    version=seq2seq_lstm.__version__,
     packages=['seq2seq_lstm'],
     description='Sequence-to-sequence classifier based on LSTM with the simple sklearn-like interface',
     long_description=long_description,
@@ -33,5 +34,5 @@ setup(
     ],
     keywords='seq2seq lstm keras scikit-learn',
     install_requires=['keras', 'numpy', 'scikit-learn'],
-    test_suite = 'tests'
+    test_suite='tests'
 )
