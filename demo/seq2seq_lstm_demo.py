@@ -122,7 +122,7 @@ def main():
         print(u'')
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
-        seq2seq = Seq2SeqLSTM(latent_dim=512, validation_split=0.1, epochs=200, lr=1e-3, decay=1e-2, verbose=True,
+        seq2seq = Seq2SeqLSTM(latent_dim=512, validation_split=0.1, epochs=200, lr=1e-2, decay=1e-1, verbose=True,
                               lowercase=False)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
