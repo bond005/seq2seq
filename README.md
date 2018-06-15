@@ -39,16 +39,16 @@ python setup.py test
 To see the work of the Seq2Seq-LSTM on a large dataset, you can run a demo
 
 ```
-demo/seq2seq_lstm_demo
+python demo/seq2seq_lstm_demo.py
 ```
 
 or
 
 ```
-python demo/seq2seq_lstm_demo.py
+python demo/seq2seq_lstm_demo.py some_file.pkl
 ```
 
-In this demo, the Seq2Seq-LSTM learns to translate the sentences from English into Russian.
+In this demo, the Seq2Seq-LSTM learns to translate the sentences from English into Russian. If you specify the neural model file (for example, aforementioned `some_file.pkl`), then the fitted neural model will be saved into this file, and at the next startups it will be loaded from the file instead of re-learning.
 
 The Russian-English sentence pairs from the Tatoeba Project have been used as data for unit tests and demo script (see http://www.manythings.org/anki/).
 
