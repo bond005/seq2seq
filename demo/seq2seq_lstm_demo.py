@@ -96,7 +96,8 @@ def main():
         print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
     print(u'')
 
-    seq2seq = Seq2SeqLSTM(validation_split=0.1, epochs=200, lr=1e-2, decay=1e-5, verbose=True, lowercase=False)
+    seq2seq = Seq2SeqLSTM(latent_dim=512, validation_split=0.1, epochs=200, lr=1e-3, decay=1e-5, verbose=True,
+                          lowercase=False)
     seq2seq.fit(input_texts_for_training, target_texts_for_training)
     print(u'')
     print(u'Training has been successfully finished.')
