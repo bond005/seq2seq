@@ -48,7 +48,7 @@ or
 python demo/seq2seq_lstm_demo.py some_file.pkl
 ```
 
-In this demo, the Seq2Seq-LSTM learns to translate the sentences from English into Russian. If you specify the neural model file (for example, aforementioned `some_file.pkl`), then the fitted neural model will be saved into this file for its loading instead of re-learning at the next running.
+In this demo, the Seq2Seq-LSTM learns to translate the sentences from English into Russian. If you specify the neural model file (for example, aforementioned `some_file.pkl`), then the fitted neural model will be saved into this file for its loading instead of re-fitting at the next running.
 
 The Russian-English sentence pairs from the Tatoeba Project have been used as data for unit tests and demo script (see http://www.manythings.org/anki/).
 
