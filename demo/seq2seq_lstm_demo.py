@@ -45,8 +45,6 @@ def shuffle_text_pairs(*args):
     for ind in indices:
         input_texts.append(args[0][ind])
         target_texts.append(args[1][ind])
-    del input_texts
-    del target_texts
     return input_texts, target_texts
 
 
@@ -90,7 +88,7 @@ def main():
         model_name = None
 
     input_texts_for_training, target_texts_for_training = shuffle_text_pairs(
-        load_text_pairs(
+        *load_text_pairs(
             os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_training.txt')
         )
     )
@@ -124,7 +122,7 @@ def main():
         print(u'')
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
-        seq2seq = Seq2SeqLSTM(latent_dim=512, validation_split=0.1, epochs=200, lr=1e-3, decay=1e-5, verbose=True,
+        seq2seq = Seq2SeqLSTM(latent_dim=512, validation_split=0.1, epochs=200, lr=1e-3, decay=1e-2, verbose=True,
                               lowercase=False)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
