@@ -351,6 +351,20 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         predicted_texts_2 = another_seq2seq.predict(input_texts_for_testing)
         self.assertEqual(predicted_texts_1, predicted_texts_2)
 
+    def test_tokenize_text_positive01(self):
+        """ Tokenization with saving of the characters register. """
+        src = u'a\t B  c Мама мыла \n\r раму 1\n'
+        dst_true = [u'a', u'B', u'c', u'Мама', u'мыла', u'раму', u'1']
+        dst_predicted = Seq2SeqLSTM.tokenize_text(src, lowercase=False)
+        self.assertEqual(dst_predicted, dst_true)
+
+    def test_tokenize_text_positive02(self):
+        """ Tokenization with bringing the resulting tokens to lowercase. """
+        src = u'a\t B  c Мама мыла \n\r раму 1\n'
+        dst_true = [u'a', u'b', u'c', u'мама', u'мыла', u'раму', u'1']
+        dst_predicted = Seq2SeqLSTM.tokenize_text(src, lowercase=True)
+        self.assertEqual(dst_predicted, dst_true)
+
     @staticmethod
     def load_text_pairs(file_name):
         input_texts = list()
