@@ -174,7 +174,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X'))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(set(input_texts_for_training), target_texts_for_training)
 
     def test_fit_negative02(self):
@@ -182,7 +186,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'y'))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training, set(target_texts_for_training))
 
     def test_fit_negative03(self):
@@ -191,7 +199,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`X` does not correspond to `y`! {0} != {1}.'.format(
             len(input_texts_for_training), len(target_texts_for_training) - 1))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training, target_texts_for_training[:-1])
 
     def test_fit_negative04(self):
@@ -199,7 +211,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(batch_size=0)
         true_err_msg = re.escape(u'`batch_size` must be a positive number! 0 is not positive.')
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training, target_texts_for_training)
 
     def test_fit_negative05(self):
@@ -208,7 +224,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         seq2seq = Seq2SeqLSTM(validation_split=None)
         true_err_msg = re.escape(u'`eval_set` must be `{0}` or `{1}`, not `{2}`!'.format(
             type((1, 2)), type([1, 2]), type({1: 'a', 2: 'b'})))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                         eval_set={'X': input_texts_for_training[-20:], 'y': target_texts_for_training[-20:]})
 
@@ -217,7 +237,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None)
         true_err_msg = re.escape(u'`eval_set` must be a two-element sequence! 3 != 2')
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                         eval_set=(input_texts_for_training[-20:], target_texts_for_training[-20:], [3, 4]))
 
@@ -226,7 +250,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X_eval_set'))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                         eval_set=(set(input_texts_for_training[-20:]), target_texts_for_training[-20:]))
 
@@ -235,7 +263,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'y_eval_set'))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                         eval_set=(input_texts_for_training[-20:], set(target_texts_for_training[-20:])))
 
@@ -244,7 +276,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
         true_err_msg = re.escape(u'`X_eval_set` does not correspond to `y_eval_set`! 20 != 19.')
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                         eval_set=(input_texts_for_training[-20:], target_texts_for_training[-19:]))
 
@@ -277,7 +313,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         seq2seq = Seq2SeqLSTM(validation_split=None, epochs=20)
         seq2seq.fit(input_texts_for_testing, target_texts_for_testing)
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X'))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             _ = seq2seq.predict(set(input_texts_for_testing))
 
     def test_check_X_negative001(self):
@@ -285,14 +325,22 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         texts = [u'123', 4, u'567']
         true_err_msg = re.escape(u'Sample {0} of `{1}` is wrong! This sample have not the `split` method.'.format(
             1, u'X'))
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             Seq2SeqLSTM.check_X(texts, u'X')
 
     def test_check_X_negative002(self):
         """ If list of texts is specified as the NumPy array, then it must be a 1-D array. """
         texts = np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]])
         true_err_msg = re.escape(u'`X` must be a 1-D array!')
-        with self.assertRaisesRegex(ValueError, true_err_msg):
+        try:
+            checking_method = self.assertRaisesRegex
+        except:
+            checking_method = self.assertRaisesRegexp
+        with checking_method(ValueError, true_err_msg):
             Seq2SeqLSTM.check_X(texts, u'X')
 
     def test_serialize_untrained(self):
