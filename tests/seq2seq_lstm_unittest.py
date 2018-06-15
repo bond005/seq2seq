@@ -29,7 +29,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
             os.remove(self.model_name)
 
     def test_creation(self):
-        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1, decay=0.2,
+        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1,
                               grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True)
         self.assertIsInstance(seq2seq, Seq2SeqLSTM)
         self.assertTrue(hasattr(seq2seq, 'batch_size'))
@@ -40,8 +40,6 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertEqual(seq2seq.latent_dim, 500)
         self.assertTrue(hasattr(seq2seq, 'validation_split'))
         self.assertAlmostEqual(seq2seq.validation_split, 0.1)
-        self.assertTrue(hasattr(seq2seq, 'decay'))
-        self.assertAlmostEqual(seq2seq.decay, 0.2)
         self.assertTrue(hasattr(seq2seq, 'grad_clipping'))
         self.assertAlmostEqual(seq2seq.grad_clipping, 50.0)
         self.assertTrue(hasattr(seq2seq, 'lr'))
@@ -287,7 +285,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
     def test_predict_positive001(self):
         """ Part of correctly predicted texts must be greater than 0.1. """
         input_texts, target_texts = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=200, lr=1e-2, decay=1e-5, verbose=True, lowercase=False)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=200, lr=1e-2, verbose=True, lowercase=False)
         predicted_texts = seq2seq.fit_predict(input_texts, target_texts)
         self.assertIsInstance(predicted_texts, list)
         self.assertEqual(len(predicted_texts), len(input_texts))
@@ -344,7 +342,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
             Seq2SeqLSTM.check_X(texts, u'X')
 
     def test_serialize_untrained(self):
-        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1, decay=0.2,
+        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1,
                               grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True)
         with open(self.model_name, 'wb') as fp:
             pickle.dump(seq2seq, fp)
@@ -359,8 +357,6 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertEqual(another_seq2seq.latent_dim, 500)
         self.assertTrue(hasattr(another_seq2seq, 'validation_split'))
         self.assertAlmostEqual(another_seq2seq.validation_split, 0.1)
-        self.assertTrue(hasattr(another_seq2seq, 'decay'))
-        self.assertAlmostEqual(another_seq2seq.decay, 0.2)
         self.assertTrue(hasattr(another_seq2seq, 'grad_clipping'))
         self.assertAlmostEqual(another_seq2seq.grad_clipping, 50.0)
         self.assertTrue(hasattr(another_seq2seq, 'lr'))
@@ -387,7 +383,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         for ind in indices[-n:]:
             input_texts_for_testing.append(input_texts[ind])
             target_texts_for_testing.append(target_texts[ind])
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=10, lr=1e-3, decay=0.0)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=10, lr=1e-3)
         seq2seq.fit(input_texts_for_training, target_texts_for_training,
                     eval_set=(input_texts_for_testing, target_texts_for_testing))
         predicted_texts_1 = seq2seq.predict(input_texts_for_testing)

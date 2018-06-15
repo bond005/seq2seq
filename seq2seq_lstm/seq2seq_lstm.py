@@ -35,8 +35,8 @@ from sklearn.utils.validation import check_is_fitted
 
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
-    def __init__(self, batch_size=128, epochs=100, latent_dim=256, validation_split=0.2, decay=0.0, grad_clipping=100.0,
-                 lr=0.001, rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False):
+    def __init__(self, batch_size=128, epochs=100, latent_dim=256, validation_split=0.2, grad_clipping=100.0, lr=0.001,
+                 rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False):
         """ Create a new object with specified parameters.
 
         :param batch_size: maximal number of texts or text pairs in the single mini-batch (positive integer).
@@ -44,7 +44,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :param latent_dim: number of units in the LSTM layer (positive integer).
         :param validation_split: the ratio of the evaluation set size to the total number of samples (float between 0
         and 1).
-        :param decay: learning rate decay over each update (non-negative float).
         :param grad_clipping: maximally permissible gradient norm (positive float).
         :param lr: learning rate (positive float)
         :param rho: parameter of the RMSprop algorithm (non-negative float).
@@ -57,7 +56,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.epochs = epochs
         self.latent_dim = latent_dim
         self.validation_split = validation_split
-        self.decay = decay
         self.grad_clipping = grad_clipping
         self.lr = lr
         self.rho = rho
@@ -189,8 +187,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
         decoder_outputs = decoder_dense(decoder_outputs)
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
-        optimizer = RMSprop(lr=self.lr, rho=self.rho, epsilon=self.epsilon, decay=self.decay,
-                            clipnorm=self.grad_clipping)
+        optimizer = RMSprop(lr=self.lr, rho=self.rho, epsilon=self.epsilon, decay=0.0, clipnorm=self.grad_clipping)
         model.compile(optimizer=optimizer, loss='categorical_crossentropy')
         training_set_generator = TextPairSequence(
             input_texts=X, target_texts=y,
@@ -380,9 +377,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         """
         return {'batch_size': self.batch_size, 'epochs': self.epochs, 'latent_dim': self.latent_dim,
-                'decay': self.decay, 'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho,
-                'epsilon': self.epsilon, 'lowercase': self.lowercase, 'verbose': self.verbose,
-                'grad_clipping': self.grad_clipping}
+                'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho, 'epsilon': self.epsilon,
+                'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping}
 
     def set_params(self, **params):
         """ Set parameters for this estimator.
@@ -436,7 +432,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         if not isinstance(new_params, dict):
             raise ValueError(u'`new_params` is wrong! Expected {0}.'.format(type({0: 1})))
         self.check_params(**new_params)
-        expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'decay', 'validation_split', 'lr', 'rho',
+        expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'validation_split', 'lr', 'rho',
                                'epsilon', 'lowercase', 'verbose', 'grad_clipping'}
         params_after_training = {'weights', 'input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
                                  'max_encoder_seq_length_', 'max_decoder_seq_length_'}
@@ -447,7 +443,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.batch_size = new_params['batch_size']
         self.epochs = new_params['epochs']
         self.latent_dim = new_params['latent_dim']
-        self.decay = new_params['decay']
         self.validation_split = new_params['validation_split']
         self.lr = new_params['lr']
         self.rho = new_params['rho']
@@ -556,12 +551,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     type(1.5), type(kwargs['validation_split'])))
             if (kwargs['validation_split'] <= 0.0) or (kwargs['validation_split'] >= 1.0):
                 raise ValueError(u'`validation_split` must be in interval (0.0, 1.0)!')
-        if 'decay' not in kwargs:
-            raise ValueError(u'`decay` is not found!')
-        if not isinstance(kwargs['decay'], float):
-            raise ValueError(u'`decay` must be `{0}`, not `{1}`.'.format(type(1.5), type(kwargs['decay'])))
-        if kwargs['decay'] < 0.0:
-            raise ValueError(u'`decay` must be a non-negative floating-point value!')
         if 'lr' not in kwargs:
             raise ValueError(u'`lr` is not found!')
         if not isinstance(kwargs['lr'], float):

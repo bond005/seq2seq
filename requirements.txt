@@ -1,3 +1,4 @@
+h5py
 keras
 numpy
 scikit-learn
