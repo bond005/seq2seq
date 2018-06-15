@@ -249,9 +249,9 @@ class TestSeq2SeqLSTM(unittest.TestCase):
                         eval_set=(input_texts_for_training[-20:], target_texts_for_training[-19:]))
 
     def test_predict_positive001(self):
-        """ Part of correctly predicted texts must be greater than 0.2. """
+        """ Part of correctly predicted texts must be greater than 0.1. """
         input_texts, target_texts = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=200, lr=1e-2, decay=1e-5, verbose=True)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=200, lr=1e-2, decay=1e-5, verbose=True, lowercase=False)
         predicted_texts = seq2seq.fit_predict(input_texts, target_texts)
         self.assertIsInstance(predicted_texts, list)
         self.assertEqual(len(predicted_texts), len(input_texts))
@@ -262,7 +262,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         for ind in range(min(5, len(predicted_texts))):
             print(u'    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
                   u'\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
-        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.2)
+        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.1)
 
     def test_predict_negative001(self):
         """ Usage of the seq2seq model for prediction without training. """

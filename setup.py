@@ -15,6 +15,7 @@ setup(
     name='seq2seq-lstm',
     version=seq2seq_lstm.__version__,
     packages=['seq2seq_lstm'],
+    include_package_data=True,
     description='Sequence-to-sequence classifier based on LSTM with the simple sklearn-like interface',
     long_description=long_description,
     url='https://github.com/bond005/seq2seq',
