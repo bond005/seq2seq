@@ -1,12 +1,12 @@
 # seq2seq-lstm
 
-Seq2Seq-LSTM is a sequence-to-sequence classifier which has the sklearn-like interface and uses the Keras for neural modeling.
+The Seq2Seq-LSTM is a sequence-to-sequence classifier with the sklearn-like interface, and it uses the Keras package for neural modeling.
 
 Developing of this module was inspired by this tutorial:
 
 _Francois Chollet_, **A ten-minute introduction to sequence-to-sequence learning in Keras**, https://blog.keras.io/a-ten-minute-introduction-to-sequence-to-sequence-learning-in-keras.html
 
-Project goal is creating a simple Python package with the sklearn-like interface for solution of different seq2seq tasks:
+The goal of this project is creating a simple Python package with the sklearn-like interface for solution of different seq2seq tasks:
 machine translation, question answering, decoding phonemes sequence into the word sequence, etc.
 
 ## Getting Started
@@ -42,10 +42,10 @@ sudo pip install seq2seq-lstm
 
 ### Usage
 
-After installing the Seq2Seq-LSTM can be used as Python library in your projects. For example:
+After installing the Seq2Seq-LSTM can be used as Python package in your projects. For example:
 
 ```
-from seq2seq import Seq2SeqLSTM  # import the Seq2Seq-LSTM library
+from seq2seq import Seq2SeqLSTM  # import the Seq2Seq-LSTM package
 seq2seq = Seq2SeqLSTM()  # create new sequence-to-sequence transformer
 ```
 
