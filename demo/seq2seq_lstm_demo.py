@@ -122,8 +122,8 @@ def main():
         print(u'')
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
-        seq2seq = Seq2SeqLSTM(latent_dim=128, validation_split=0.1, epochs=200, lr=1e-2, verbose=True, lowercase=False,
-                              batch_size=512)
+        seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=True, lowercase=False,
+                              batch_size=64)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
         print(u'Training has been successfully finished.')
