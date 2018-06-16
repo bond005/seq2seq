@@ -27,7 +27,7 @@ setup(
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
         'Topic :: Text Processing',
         'Topic :: Text Processing :: Linguistic',
-        'License :: OSI Approved :: Apache License Version 2.0',
+        'License :: OSI Approved :: Apache Software License',
         'Programming Language :: Python :: 2.6',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.4',
