@@ -11,15 +11,7 @@ machine translation, question answering, decoding phonemes sequence into the wor
 
 ## Getting Started
 
-### Prerequisites
-
-You should have python installed on your machine (we recommend Anaconda package) and modules listed in requirements.txt. If you do not have them, run in Terminal
-
-```
-pip install -r requirements.txt
-```
-
-### Installing and Usage
+### Installing
 
 To install this project on your local machine, you should run the following commands in Terminal:
 
@@ -34,6 +26,27 @@ You can also run the tests
 
 ```
 python setup.py test
+```
+
+But I recommend you to use pip and install this package from PyPi:
+
+```
+pip install seq2seq-lstm
+```
+
+or
+
+```
+sudo pip install seq2seq-lstm
+```
+
+### Usage
+
+After installing the Seq2Seq-LSTM can be used as Python library in your projects. For example:
+
+```
+from seq2seq import Seq2SeqLSTM  # import the Seq2Seq-LSTM library
+seq2seq = Seq2SeqLSTM()  # create new sequence-to-sequence transformer
 ```
 
 To see the work of the Seq2Seq-LSTM on a large dataset, you can run a demo
