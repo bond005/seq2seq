@@ -13,10 +13,12 @@ import numpy as np
 from sklearn.utils.validation import NotFittedError
 
 try:
-    from seq2seq_lstm import Seq2SeqLSTM, TextPairSequence
+    from seq2seq_lstm import Seq2SeqLSTM
+    from seq2seq_lstm.seq2seq_lstm import TextPairSequence
 except:
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-    from seq2seq_lstm import Seq2SeqLSTM, TextPairSequence
+    from seq2seq_lstm import Seq2SeqLSTM
+    from seq2seq_lstm.seq2seq_lstm import TextPairSequence
 
 
 class TestSeq2SeqLSTM(unittest.TestCase):
