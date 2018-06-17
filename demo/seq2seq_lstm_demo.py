@@ -215,7 +215,7 @@ def main():
         print(u'Training has been successfully finished.')
         if model_name is not None:
             with open(model_name, 'wb') as fp:
-                pickle.dump(seq2seq, fp)
+                pickle.dump(seq2seq, fp, protocol=2)
             print(u'Model has been successfully saved into file "{0}".'.format(model_name))
 
     start_time = time.time()
