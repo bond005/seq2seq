@@ -16,7 +16,6 @@ machine translation, question answering, decoding phonemes sequence into the wor
 To install this project on your local machine, you should run the following commands in Terminal:
 
 ```
-cd YOUR_FOLDER
 git clone https://github.com/bond005/seq2seq.git
 cd seq2seq
 sudo python setup.py
