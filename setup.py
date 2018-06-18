@@ -13,8 +13,7 @@ The Seq2Seq-LSTM is a sequence-to-sequence classifier with the
 sklearn-like interface, and it uses the Keras package for neural
 modeling.
 
-Developing of this module was inspired by Francois Chollet's tutorial:
-
+Developing of this module was inspired by Francois Chollet's tutorial
 `A ten-minute introduction to sequence-to-sequence learning in Keras
 <https://blog.keras.io/a-ten-minute-introduction-to-sequence-to-sequence-learning-in-keras.html>`_
 
@@ -44,8 +43,17 @@ You can also run the tests:
 
     python setup.py test
 
-But I recommend you to use pip and install this package from PyPi: ``pip
-install seq2seq-lstm`` or ``sudo pip install seq2seq-lstm``.
+But I recommend you to use pip and install this package from PyPi:
+
+.. code::
+
+    pip install seq2seq-lstm
+
+or (using ``sudo``):
+
+.. code::
+
+    sudo pip install seq2seq-lstm
 
 Usage
 ~~~~~
@@ -59,12 +67,21 @@ projects. For example:
     seq2seq = Seq2SeqLSTM()  # create new sequence-to-sequence transformer
 
 To see the work of the Seq2Seq-LSTM on a large dataset, you can run a
-demo ``python demo/seq2seq_lstm_demo.py`` or 
-``python demo/seq2seq_lstm_demo.py some_file.pkl``
+demo
+
+.. code::
+ 
+    python demo/seq2seq_lstm_demo.py
+
+or (with saving model after its training):
+
+.. code::
+ 
+    python demo/seq2seq_lstm_demo.py some_file.pkl
 
 In this demo, the Seq2Seq-LSTM learns to translate the sentences from
 English into Russian. If you specify the neural model file (for example,
-aforementioned ``some_file.pkl``), then the fitted neural model will be
+aforementioned ``some_file.pkl``), then the learned neural model will be
 saved into this file for its loading instead of re-fitting at the next
 running.
 
