@@ -14,6 +14,7 @@ setup(
     include_package_data=True,
     description='Sequence-to-sequence classifier based on LSTM with the simple sklearn-like interface',
     long_description=open(join(dirname(__file__), 'README.md'), encoding='utf-8').read(),
+    long_description_content_type="text/markdown",
     url='https://github.com/bond005/seq2seq',
     author='Ivan Bondarenko',
     author_email='bond005@yandex.ru',
@@ -34,8 +35,7 @@ setup(
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
     ],
-    keywords=['natural language processing', 'nlp', 'text processing', 'sequence-to-sequence', 'seq2seq', 'lstm',
-              'keras', 'scikit-learn'],
+    keywords=['seq2seq', 'sequence-to-sequence', 'lstm', 'nlp', 'keras', 'scikit-learn'],
     install_requires=['h5py', 'keras', 'numpy', 'scikit-learn'],
     test_suite='tests'
 )
