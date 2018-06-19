@@ -262,23 +262,31 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 input_texts=X, batch_size=self.batch_size, max_encoder_seq_length=self.max_encoder_seq_length_,
                 input_token_index=self.input_token_index_, lowercase=self.lowercase
         ):
-            for ind in range(input_seq.shape[0]):
-                states_value = self.encoder_model_.predict(input_seq[ind:(ind + 1)])
-                target_seq = np.zeros((1, 1, len(self.target_token_index_)), dtype=np.float32)
-                target_seq[0, 0, self.target_token_index_[u'\t']] = 1.0
-                stop_condition = False
-                decoded_sentence = []
-                while not stop_condition:
-                    output_tokens, h, c = self.decoder_model_.predict([target_seq] + states_value)
-                    sampled_token_index = np.argmax(output_tokens[0, -1, :])
-                    sampled_char = self.reverse_target_char_index_[sampled_token_index]
-                    decoded_sentence.append(sampled_char)
-                    if (sampled_char == u'\n') or (len(decoded_sentence) > self.max_decoder_seq_length_):
-                        stop_condition = True
-                    target_seq = np.zeros((1, 1, len(self.target_token_index_)), dtype=np.float32)
-                    target_seq[0, 0, sampled_token_index] = 1.0
-                    states_value = [h, c]
-                texts.append(u' '.join(decoded_sentence))
+            batch_size = input_seq.shape[0]
+            states_value = self.encoder_model_.predict(input_seq)
+            target_seq = np.zeros((batch_size, 1, len(self.target_token_index_)), dtype=np.float32)
+            stop_conditions = []
+            decoded_sentences = []
+            for text_idx in range(batch_size):
+                target_seq[text_idx, 0, self.target_token_index_[u'\t']] = 1.0
+                stop_conditions.append(False)
+                decoded_sentences.append([])
+            while not all(stop_conditions):
+                output_tokens, h, c = self.decoder_model_.predict([target_seq] + states_value)
+                indices_of_sampled_tokens = np.argmax(output_tokens[:, -1, :], axis=1)
+                for text_idx in range(batch_size):
+                    if stop_conditions[text_idx]:
+                        continue
+                    sampled_char = self.reverse_target_char_index_[indices_of_sampled_tokens[text_idx]]
+                    decoded_sentences[text_idx].append(sampled_char)
+                    if (sampled_char == u'\n') or (len(decoded_sentences[text_idx]) > self.max_decoder_seq_length_):
+                        stop_conditions[text_idx] = True
+                    for token_idx in range(len(self.target_token_index_)):
+                        target_seq[text_idx][0][token_idx] = 0.0
+                    target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
+                states_value = [h, c]
+            for text_idx in range(batch_size):
+                texts.append(u' '.join(decoded_sentences[text_idx]))
             del input_seq
         if isinstance(X, tuple):
             return tuple(texts)
