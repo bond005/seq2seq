@@ -31,8 +31,9 @@ class TestSeq2SeqLSTM(unittest.TestCase):
             os.remove(self.model_name)
 
     def test_creation(self):
-        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1,
-                              grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True)
+        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1, use_conv_layer=True,
+                              n_filters=32, kernel_size=5, grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2,
+                              lowercase=False, verbose=True)
         self.assertIsInstance(seq2seq, Seq2SeqLSTM)
         self.assertTrue(hasattr(seq2seq, 'batch_size'))
         self.assertEqual(seq2seq.batch_size, 256)
@@ -40,6 +41,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertEqual(seq2seq.epochs, 200)
         self.assertTrue(hasattr(seq2seq, 'latent_dim'))
         self.assertEqual(seq2seq.latent_dim, 500)
+        self.assertTrue(hasattr(seq2seq, 'n_filters'))
+        self.assertEqual(seq2seq.n_filters, 32)
+        self.assertTrue(hasattr(seq2seq, 'kernel_size'))
+        self.assertEqual(seq2seq.kernel_size, 5)
         self.assertTrue(hasattr(seq2seq, 'validation_split'))
         self.assertAlmostEqual(seq2seq.validation_split, 0.1)
         self.assertTrue(hasattr(seq2seq, 'grad_clipping'))
@@ -50,13 +55,15 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertAlmostEqual(seq2seq.rho, 0.8)
         self.assertTrue(hasattr(seq2seq, 'lowercase'))
         self.assertFalse(seq2seq.lowercase)
+        self.assertTrue(hasattr(seq2seq, 'use_conv_layer'))
+        self.assertTrue(seq2seq.use_conv_layer)
         self.assertTrue(hasattr(seq2seq, 'verbose'))
         self.assertTrue(seq2seq.verbose)
 
     def test_fit_positive01(self):
-        """ Input and target texts for training are the Python tuples. """
+        """ Input and target texts for training are the Python tuples. The Conv1D layer is not used. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(verbose=True, lr=1e-2)
+        seq2seq = Seq2SeqLSTM(use_conv_layer=False, verbose=True, lr=1e-2)
         res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_token_index_'))
@@ -77,6 +84,29 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertIsInstance(res.decoder_model_, Model)
 
     def test_fit_positive02(self):
+        """ The Conv1D layer is used. """
+        input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
+        seq2seq = Seq2SeqLSTM(use_conv_layer=True, verbose=True, lr=1e-2)
+        res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
+        self.assertIsInstance(res, Seq2SeqLSTM)
+        self.assertTrue(hasattr(res, 'input_token_index_'))
+        self.assertIsInstance(res.input_token_index_, dict)
+        self.assertTrue(hasattr(res, 'target_token_index_'))
+        self.assertIsInstance(res.target_token_index_, dict)
+        self.assertTrue(hasattr(res, 'reverse_target_char_index_'))
+        self.assertIsInstance(res.reverse_target_char_index_, dict)
+        self.assertTrue(hasattr(res, 'max_encoder_seq_length_'))
+        self.assertIsInstance(res.max_encoder_seq_length_, int)
+        self.assertGreater(res.max_encoder_seq_length_, 0)
+        self.assertTrue(hasattr(res, 'max_decoder_seq_length_'))
+        self.assertIsInstance(res.max_decoder_seq_length_, int)
+        self.assertGreater(res.max_decoder_seq_length_, 0)
+        self.assertTrue(hasattr(res, 'encoder_model_'))
+        self.assertIsInstance(res.encoder_model_, Model)
+        self.assertTrue(hasattr(res, 'decoder_model_'))
+        self.assertIsInstance(res.decoder_model_, Model)
+
+    def test_fit_positive03(self):
         """ Input and target texts for training are the 1-D numpy arrays. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(lr=1e-2)
@@ -99,7 +129,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertTrue(hasattr(res, 'decoder_model_'))
         self.assertIsInstance(res.decoder_model_, Model)
 
-    def test_fit_positive03(self):
+    def test_fit_positive04(self):
         """ Input and target texts for training are the Python lists. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(lr=1e-2)
@@ -122,7 +152,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertTrue(hasattr(res, 'decoder_model_'))
         self.assertIsInstance(res.decoder_model_, Model)
 
-    def test_fit_positive04(self):
+    def test_fit_positive05(self):
         """ Early stopping is not used in the training process. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2)
@@ -145,7 +175,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertTrue(hasattr(res, 'decoder_model_'))
         self.assertIsInstance(res.decoder_model_, Model)
 
-    def test_fit_positive05(self):
+    def test_fit_positive06(self):
         """ Prepared evaluation set is used in the early stopping criterion. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2)
@@ -685,3 +715,7 @@ class TestTextPairSequence(unittest.TestCase):
                             msg=u'batch_ind={0}, decoder_input_data'.format(batch_ind))
             self.assertTrue(np.array_equal(predicted_batch[1], true_batches[batch_ind][1]),
                             msg=u'batch_ind={0}, decoder_target_data'.format(batch_ind))
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

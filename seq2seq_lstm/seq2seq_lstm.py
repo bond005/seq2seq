@@ -25,7 +25,7 @@ import tempfile
 import keras.backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.models import Model
-from keras.layers import Input, LSTM, Dense
+from keras.layers import Input, LSTM, CuDNNLSTM, Dense, Conv1D
 from keras.optimizers import RMSprop
 from keras.utils import Sequence
 import numpy as np
@@ -35,8 +35,11 @@ from sklearn.utils.validation import check_is_fitted
 
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
-    def __init__(self, batch_size=64, epochs=100, latent_dim=256, validation_split=0.2, grad_clipping=100.0, lr=0.001,
-                 rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False):
+    USE_CUDNN_LSTM = False
+
+    def __init__(self, batch_size=64, epochs=100, use_conv_layer=False, kernel_size=3, n_filters=512, latent_dim=256,
+                 validation_split=0.2, grad_clipping=100.0, lr=0.001, rho=0.9, epsilon=K.epsilon(), lowercase=True,
+                 verbose=False):
         """ Create a new object with specified parameters.
 
         :param batch_size: maximal number of texts or text pairs in the single mini-batch (positive integer).
@@ -59,6 +62,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.grad_clipping = grad_clipping
         self.lr = lr
         self.rho = rho
+        self.use_conv_layer = use_conv_layer
+        self.kernel_size = kernel_size
+        self.n_filters = n_filters
         self.epsilon = epsilon
         self.lowercase = lowercase
         self.verbose = verbose
@@ -178,12 +184,28 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.max_encoder_seq_length_ = max_encoder_seq_length
         self.max_decoder_seq_length_ = max_decoder_seq_length
         encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-        encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True)
-        encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+        if self.USE_CUDNN_LSTM:
+            encoder = CuDNNLSTM(self.latent_dim, return_sequences=False, return_state=True)
+        else:
+            encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True, recurrent_activation='sigmoid')
+        if self.use_conv_layer:
+            encoder_outputs, state_h, state_c = encoder(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
+                                                               padding='same', activation='relu')(encoder_inputs))
+        else:
+            encoder_outputs, state_h, state_c = encoder(encoder_inputs)
         encoder_states = [state_h, state_c]
         decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
-        decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True)
-        decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
+        if self.USE_CUDNN_LSTM:
+            decoder_lstm = CuDNNLSTM(self.latent_dim, return_sequences=True, return_state=True)
+        else:
+            decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True,
+                                recurrent_activation='sigmoid')
+        if self.use_conv_layer:
+            decoder_outputs, _, _ = decoder_lstm(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
+                                                        padding='same', activation='relu')(decoder_inputs),
+                                                 initial_state=encoder_states)
+        else:
+            decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
         decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
         decoder_outputs = decoder_dense(decoder_outputs)
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
@@ -235,8 +257,14 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         decoder_state_input_h = Input(shape=(self.latent_dim,))
         decoder_state_input_c = Input(shape=(self.latent_dim,))
         decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-        decoder_outputs, state_h, state_c = decoder_lstm(
-            decoder_inputs, initial_state=decoder_states_inputs)
+        if self.use_conv_layer:
+            decoder_outputs, state_h, state_c = decoder_lstm(
+                Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='same',
+                       activation='relu')(decoder_inputs),
+                initial_state=decoder_states_inputs)
+        else:
+            decoder_outputs, state_h, state_c = decoder_lstm(
+                decoder_inputs, initial_state=decoder_states_inputs)
         decoder_states = [state_h, state_c]
         decoder_outputs = decoder_dense(decoder_outputs)
         self.decoder_model_ = Model(
@@ -320,19 +348,37 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         tmp_weights_name = self.get_temp_name()
         try:
             encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-            encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True)
-            encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+            if self.USE_CUDNN_LSTM:
+                encoder = CuDNNLSTM(self.latent_dim, return_sequences=False, return_state=True)
+            else:
+                encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True,
+                               recurrent_activation='sigmoid')
+            if self.use_conv_layer:
+                encoder_outputs, state_h, state_c = encoder(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
+                                                                   padding='same', activation='relu')(encoder_inputs))
+            else:
+                encoder_outputs, state_h, state_c = encoder(encoder_inputs)
             encoder_states = [state_h, state_c]
             decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
-            decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True)
-            decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
+            if self.USE_CUDNN_LSTM:
+                decoder_lstm = CuDNNLSTM(self.latent_dim, return_sequences=True, return_state=True)
+            else:
+                decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True,
+                                    recurrent_activation='sigmoid')
             decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
             self.encoder_model_ = Model(encoder_inputs, encoder_states)
             decoder_state_input_h = Input(shape=(self.latent_dim,))
             decoder_state_input_c = Input(shape=(self.latent_dim,))
             decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-            decoder_outputs, state_h, state_c = decoder_lstm(
-                decoder_inputs, initial_state=decoder_states_inputs)
+            if self.use_conv_layer:
+                decoder_outputs, state_h, state_c = decoder_lstm(
+                    Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
+                           padding='same', activation='relu')(decoder_inputs),
+                    initial_state=decoder_states_inputs
+                )
+            else:
+                decoder_outputs, state_h, state_c = decoder_lstm(
+                    decoder_inputs, initial_state=decoder_states_inputs)
             decoder_states = [state_h, state_c]
             decoder_outputs = decoder_dense(decoder_outputs)
             self.decoder_model_ = Model(
@@ -389,7 +435,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         """
         return {'batch_size': self.batch_size, 'epochs': self.epochs, 'latent_dim': self.latent_dim,
                 'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho, 'epsilon': self.epsilon,
-                'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping}
+                'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping,
+                'use_conv_layer': self.use_conv_layer, 'kernel_size': self.kernel_size, 'n_filters': self.n_filters}
 
     def set_params(self, **params):
         """ Set parameters for this estimator.
@@ -444,7 +491,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             raise ValueError(u'`new_params` is wrong! Expected {0}.'.format(type({0: 1})))
         self.check_params(**new_params)
         expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'validation_split', 'lr', 'rho',
-                               'epsilon', 'lowercase', 'verbose', 'grad_clipping'}
+                               'epsilon', 'lowercase', 'verbose', 'grad_clipping', 'n_filters', 'kernel_size',
+                               'use_conv_layer'}
         params_after_training = {'weights', 'input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
                                  'max_encoder_seq_length_', 'max_decoder_seq_length_'}
         is_fitted = len(set(new_params.keys())) > len(expected_param_keys)
@@ -461,6 +509,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.lowercase = new_params['lowercase']
         self.verbose = new_params['verbose']
         self.grad_clipping = new_params['grad_clipping']
+        self.use_conv_layer = new_params['use_conv_layer']
+        self.n_filters = new_params['n_filters']
+        self.kernel_size = new_params['kernel_size']
         if is_fitted:
             if not isinstance(new_params['input_token_index_'], dict):
                 raise ValueError(u'`new_params` is wrong! `input_token_index_` must be the `{0}`!'.format(
@@ -544,11 +595,30 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         if kwargs['latent_dim'] < 1:
             raise ValueError(u'`latent_dim` must be a positive number! {0} is not positive.'.format(
                 kwargs['latent_dim']))
+        if 'kernel_size' not in kwargs:
+            raise ValueError(u'`kernel_size` is not found!')
+        if not isinstance(kwargs['kernel_size'], int):
+            raise ValueError(u'`kernel_size` must be `{0}`, not `{1}`.'.format(type(10), type(kwargs['kernel_size'])))
+        if kwargs['kernel_size'] < 1:
+            raise ValueError(u'`kernel_size` must be a positive number! {0} is not positive.'.format(
+                kwargs['kernel_size']))
+        if 'n_filters' not in kwargs:
+            raise ValueError(u'`n_filters` is not found!')
+        if not isinstance(kwargs['n_filters'], int):
+            raise ValueError(u'`n_filters` must be `{0}`, not `{1}`.'.format(type(10), type(kwargs['n_filters'])))
+        if kwargs['n_filters'] < 1:
+            raise ValueError(u'`n_filters` must be a positive number! {0} is not positive.'.format(
+                kwargs['n_filters']))
         if 'lowercase' not in kwargs:
             raise ValueError(u'`lowercase` is not found!')
         if (not isinstance(kwargs['lowercase'], int)) and (not isinstance(kwargs['lowercase'], bool)):
             raise ValueError(u'`lowercase` must be `{0}` or `{1}`, not `{2}`.'.format(type(10), type(True),
                                                                                       type(kwargs['lowercase'])))
+        if 'use_conv_layer' not in kwargs:
+            raise ValueError(u'`use_conv_layer` is not found!')
+        if (not isinstance(kwargs['use_conv_layer'], int)) and (not isinstance(kwargs['use_conv_layer'], bool)):
+            raise ValueError(u'`use_conv_layer` must be `{0}` or `{1}`, not `{2}`.'.format(
+                type(10), type(True), type(kwargs['use_conv_layer'])))
         if 'verbose' not in kwargs:
             raise ValueError(u'`verbose` is not found!')
         if (not isinstance(kwargs['verbose'], int)) and (not isinstance(kwargs['verbose'], bool)):

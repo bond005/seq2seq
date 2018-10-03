@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from argparse import ArgumentParser
 import codecs
 import os
 import pickle
@@ -162,16 +163,25 @@ def calc_levenshtein_dist(left_list, right_list):
 
 
 def main():
-    if len(sys.argv) > 1:
-        model_name = os.path.normpath(sys.argv[1].strip())
+    parser = ArgumentParser()
+    parser.add_argument('-m', '--model', dest='model_name', type=str, required=False, default=None,
+                        help='The binary file with the Seq2Seq model.')
+    parser.add_argument('--conv1d', dest='use_conv1d', action='store_true', required=False,
+                        help='Need to use a Conv1D layer')
+    parser.add_argument('--cudnn', dest='use_cudnn', action='store_true', required=False,
+                        help='Need to use a fast LSTM implementation with CuDNN.')
+    args = parser.parse_args()
+
+    if args.model_name is None:
+        model_name = None
+    else:
+        model_name = os.path.normpath(args.model_name.strip())
         if len(model_name) == 0:
             model_name = None
         else:
             model_dir_name = os.path.dirname(model_name)
             if len(model_dir_name) > 0:
-                assert os.path.isdir(model_dir_name), u'Directory "{0}" does not exist!'.format(model_dir_name)
-    else:
-        model_name = None
+                assert os.path.isdir(model_dir_name), 'Directory "{0}" does not exist!'.format(model_dir_name)
 
     input_texts_for_training, target_texts_for_training = shuffle_text_pairs(
         *load_text_pairs(
@@ -200,6 +210,7 @@ def main():
         print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
     print(u'')
 
+    Seq2SeqLSTM.USE_CUDNN_LSTM = args.use_cudnn
     if (model_name is not None) and os.path.isfile(model_name):
         with open(model_name, 'rb') as fp:
             seq2seq = pickle.load(fp)
@@ -209,7 +220,7 @@ def main():
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
         seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=True, lowercase=False,
-                              batch_size=64)
+                              batch_size=64, use_conv_layer=args.use_conv1d, kernel_size=5, n_filters=512)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
         print(u'Training has been successfully finished.')
