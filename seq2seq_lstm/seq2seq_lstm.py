@@ -189,6 +189,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
         optimizer = RMSprop(lr=self.lr, rho=self.rho, epsilon=self.epsilon, decay=0.0, clipnorm=self.grad_clipping)
         model.compile(optimizer=optimizer, loss='categorical_crossentropy')
+        if self.verbose:
+            model.summary(positions=[0.23, 0.77, 0.85, 1.0])
+            print(u'')
         training_set_generator = TextPairSequence(
             input_texts=X, target_texts=y,
             batch_size=self.batch_size,
