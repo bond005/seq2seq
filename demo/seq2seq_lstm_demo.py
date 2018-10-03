@@ -166,10 +166,17 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('-m', '--model', dest='model_name', type=str, required=False, default=None,
                         help='The binary file with the Seq2Seq model.')
+    parser.add_argument('-t', '--train', dest='train_data_name', type=str, required=False,
+                        default=os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_training.txt'),
+                        help='The text file with parallel English-Russian corpus for training.')
+    parser.add_argument('-e', '--eval', dest='eval_data_name', type=str, required=False,
+                        default=os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_testing.txt'),
+                        help='The text file with parallel English-Russian corpus for evaluation (testing).')
     parser.add_argument('--conv1d', dest='use_conv1d', action='store_true', required=False,
                         help='Need to use a Conv1D layer')
     parser.add_argument('--cudnn', dest='use_cudnn', action='store_true', required=False,
                         help='Need to use a fast LSTM implementation with CuDNN.')
+    parser.add_argument('--verbose', dest='verbose', type=int, required=False, default=1, help='Verbose mode.')
     args = parser.parse_args()
 
     if args.model_name is None:
@@ -182,11 +189,15 @@ def main():
             model_dir_name = os.path.dirname(model_name)
             if len(model_dir_name) > 0:
                 assert os.path.isdir(model_dir_name), 'Directory "{0}" does not exist!'.format(model_dir_name)
+    verbose_mode = args.verbose
+    assert (verbose_mode >= 0) and (verbose_mode <= 2), '{0} is wrong value for the verbose mode.'.format(verbose_mode)
+    name_of_file_for_training = os.path.normpath(args.train_data_name)
+    name_of_file_for_testing = os.path.normpath(args.eval_data_name)
+    assert os.path.isfile(name_of_file_for_training), 'File "{0}" does not exist!'.format(name_of_file_for_training)
+    assert os.path.isfile(name_of_file_for_testing), 'File "{0}" does not exist!'.format(name_of_file_for_testing)
 
     input_texts_for_training, target_texts_for_training = shuffle_text_pairs(
-        *load_text_pairs(
-            os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_training.txt')
-        )
+        *load_text_pairs(name_of_file_for_training)
     )
     print(u'')
     print(u'There are {0} text pairs in the training data.'.format(len(input_texts_for_training)))
@@ -197,9 +208,7 @@ def main():
         print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
     print(u'')
 
-    input_texts_for_testing, target_texts_for_testing = load_text_pairs(
-        os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_testing.txt')
-    )
+    input_texts_for_testing, target_texts_for_testing = load_text_pairs(name_of_file_for_testing)
     print(u'There are {0} text pairs in the testing data.'.format(len(input_texts_for_testing)))
     print(u'Some samples of these text pairs:')
     indices = list(range(len(input_texts_for_testing)))
@@ -219,8 +228,9 @@ def main():
         print(u'')
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
-        seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=True, lowercase=False,
-                              batch_size=64, use_conv_layer=args.use_conv1d, kernel_size=5, n_filters=512)
+        seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=verbose_mode,
+                              lowercase=False, batch_size=64, use_conv_layer=args.use_conv1d, kernel_size=5,
+                              n_filters=512)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
         print(u'Training has been successfully finished.')

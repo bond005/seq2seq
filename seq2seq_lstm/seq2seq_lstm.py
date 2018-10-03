@@ -243,7 +243,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             )
             model.fit_generator(
                 generator=training_set_generator,
-                epochs=self.epochs, verbose=(1 if self.verbose else 0),
+                epochs=self.epochs, verbose=(1 if (self.verbose > 1) else 0),
                 shuffle=True,
                 validation_data=evaluation_set_generator,
                 callbacks=callbacks
