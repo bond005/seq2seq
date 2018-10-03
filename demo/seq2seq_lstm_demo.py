@@ -177,6 +177,7 @@ def main():
     parser.add_argument('--cudnn', dest='use_cudnn', action='store_true', required=False,
                         help='Need to use a fast LSTM implementation with CuDNN.')
     parser.add_argument('--verbose', dest='verbose', type=int, required=False, default=1, help='Verbose mode.')
+    parser.add_argument('--batch', dest='batch_size', type=int, required=False, default=128, help='Mini-batch size.')
     args = parser.parse_args()
 
     if args.model_name is None:
@@ -195,6 +196,9 @@ def main():
     name_of_file_for_testing = os.path.normpath(args.eval_data_name)
     assert os.path.isfile(name_of_file_for_training), 'File "{0}" does not exist!'.format(name_of_file_for_training)
     assert os.path.isfile(name_of_file_for_testing), 'File "{0}" does not exist!'.format(name_of_file_for_testing)
+    batch_size = args.batch_size
+    assert batch_size > 0, '{0} is wrong value for the batch size. Expected a positive integer number.'.format(
+        batch_size)
 
     input_texts_for_training, target_texts_for_training = shuffle_text_pairs(
         *load_text_pairs(name_of_file_for_training)
@@ -229,7 +233,7 @@ def main():
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
         seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=verbose_mode,
-                              lowercase=False, batch_size=64, use_conv_layer=args.use_conv1d, kernel_size=5,
+                              lowercase=False, batch_size=batch_size, use_conv_layer=args.use_conv1d, kernel_size=5,
                               n_filters=512)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
