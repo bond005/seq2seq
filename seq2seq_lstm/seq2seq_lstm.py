@@ -190,7 +190,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True, recurrent_activation='sigmoid')
         if self.use_conv_layer:
             encoder_outputs, state_h, state_c = encoder(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
-                                                               padding='same', activation='relu')(encoder_inputs))
+                                                               padding='valid', activation='relu')(encoder_inputs))
         else:
             encoder_outputs, state_h, state_c = encoder(encoder_inputs)
         encoder_states = [state_h, state_c]
@@ -200,12 +200,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         else:
             decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True,
                                 recurrent_activation='sigmoid')
-        if self.use_conv_layer:
-            decoder_outputs, _, _ = decoder_lstm(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
-                                                        padding='same', activation='relu')(decoder_inputs),
-                                                 initial_state=encoder_states)
-        else:
-            decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
+        decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
         decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
         decoder_outputs = decoder_dense(decoder_outputs)
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
@@ -257,14 +252,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         decoder_state_input_h = Input(shape=(self.latent_dim,))
         decoder_state_input_c = Input(shape=(self.latent_dim,))
         decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-        if self.use_conv_layer:
-            decoder_outputs, state_h, state_c = decoder_lstm(
-                Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='same',
-                       activation='relu')(decoder_inputs),
-                initial_state=decoder_states_inputs)
-        else:
-            decoder_outputs, state_h, state_c = decoder_lstm(
-                decoder_inputs, initial_state=decoder_states_inputs)
+        decoder_outputs, state_h, state_c = decoder_lstm(decoder_inputs, initial_state=decoder_states_inputs)
         decoder_states = [state_h, state_c]
         decoder_outputs = decoder_dense(decoder_outputs)
         self.decoder_model_ = Model(
@@ -355,7 +343,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                                recurrent_activation='sigmoid')
             if self.use_conv_layer:
                 encoder_outputs, state_h, state_c = encoder(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
-                                                                   padding='same', activation='relu')(encoder_inputs))
+                                                                   padding='valid', activation='relu')(encoder_inputs))
             else:
                 encoder_outputs, state_h, state_c = encoder(encoder_inputs)
             encoder_states = [state_h, state_c]
@@ -370,15 +358,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             decoder_state_input_h = Input(shape=(self.latent_dim,))
             decoder_state_input_c = Input(shape=(self.latent_dim,))
             decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-            if self.use_conv_layer:
-                decoder_outputs, state_h, state_c = decoder_lstm(
-                    Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
-                           padding='same', activation='relu')(decoder_inputs),
-                    initial_state=decoder_states_inputs
-                )
-            else:
-                decoder_outputs, state_h, state_c = decoder_lstm(
-                    decoder_inputs, initial_state=decoder_states_inputs)
+            decoder_outputs, state_h, state_c = decoder_lstm(decoder_inputs, initial_state=decoder_states_inputs)
             decoder_states = [state_h, state_c]
             decoder_outputs = decoder_dense(decoder_outputs)
             self.decoder_model_ = Model(
