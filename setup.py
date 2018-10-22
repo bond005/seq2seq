@@ -119,6 +119,6 @@ setup(
         'Programming Language :: Python :: 3.6',
     ],
     keywords=['seq2seq', 'sequence-to-sequence', 'lstm', 'nlp', 'keras', 'scikit-learn'],
-    install_requires=['gensim>=2.3.0', 'h5py>=2.8.0', 'keras>=2.0.7', 'numpy>=1.14.5', 'scikit-learn>=0.19.1'],
+    install_requires=['gensim>=2.3.0', 'h5py>=2.8.0', 'keras>=2.2.0', 'numpy>=1.14.5', 'scikit-learn>=0.19.1'],
     test_suite='tests'
 )
