@@ -8,7 +8,7 @@ import re
 import sys
 import unittest
 
-from keras import Model
+from keras.models import Model
 import numpy as np
 from sklearn.utils.validation import NotFittedError
 
