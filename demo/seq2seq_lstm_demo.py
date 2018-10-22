@@ -174,10 +174,12 @@ def main():
                         help='The text file with parallel English-Russian corpus for evaluation (testing).')
     parser.add_argument('--conv1d', dest='use_conv1d', action='store_true', required=False,
                         help='Need to use a Conv1D layer')
-    parser.add_argument('--cudnn', dest='use_cudnn', action='store_true', required=False,
-                        help='Need to use a fast LSTM implementation with CuDNN.')
     parser.add_argument('--verbose', dest='verbose', type=int, required=False, default=1, help='Verbose mode.')
     parser.add_argument('--batch', dest='batch_size', type=int, required=False, default=128, help='Mini-batch size.')
+    parser.add_argument('--emb', dest='embedding_size', type=int, required=False, default=None,
+                        help='Size of embedding for the character N-gram.')
+    parser.add_argument('--char', dest='char_ngram_size', type=int, required=False, default=3,
+                        help='Length of the character N-gram.')
     args = parser.parse_args()
 
     if args.model_name is None:
@@ -199,6 +201,13 @@ def main():
     batch_size = args.batch_size
     assert batch_size > 0, '{0} is wrong value for the batch size. Expected a positive integer number.'.format(
         batch_size)
+    embedding_size = args.embedding_size
+    if embedding_size is not None:
+        assert embedding_size > 0, '{0} is wrong value for the batch size. Expected a positive integer number.'.format(
+            embedding_size)
+    char_ngram_size = args.char_ngram_size
+    assert char_ngram_size > 0, '{0} is wrong value for the batch size. Expected a positive integer number.'.format(
+        char_ngram_size)
 
     input_texts_for_training, target_texts_for_training = shuffle_text_pairs(
         *load_text_pairs(name_of_file_for_training)
@@ -223,7 +232,6 @@ def main():
         print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
     print(u'')
 
-    Seq2SeqLSTM.USE_CUDNN_LSTM = args.use_cudnn
     if (model_name is not None) and os.path.isfile(model_name):
         with open(model_name, 'rb') as fp:
             seq2seq = pickle.load(fp)
@@ -232,9 +240,10 @@ def main():
         print(u'')
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
-        seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=verbose_mode,
-                              lowercase=False, batch_size=batch_size, use_conv_layer=args.use_conv1d, kernel_size=5,
-                              n_filters=512)
+        seq2seq = Seq2SeqLSTM(latent_dim=1024, validation_split=0.1, epochs=200, lr=1e-3, dropout=0.7,
+                              verbose=verbose_mode, lowercase=False, batch_size=batch_size,
+                              use_conv_layer=args.use_conv1d, kernel_size=5, n_filters=512,
+                              embedding_size=embedding_size, char_ngram_size=char_ngram_size)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
         print(u'Training has been successfully finished.')

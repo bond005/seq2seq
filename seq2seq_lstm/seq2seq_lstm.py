@@ -22,10 +22,11 @@ import copy
 import os
 import tempfile
 
+from gensim.models import Word2Vec
 import keras.backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.models import Model
-from keras.layers import Input, LSTM, CuDNNLSTM, Dense, Conv1D
+from keras.layers import Input, LSTM, Dense, Conv1D, Masking, Embedding
 from keras.optimizers import RMSprop
 from keras.utils import Sequence
 import numpy as np
@@ -35,15 +36,21 @@ from sklearn.utils.validation import check_is_fitted
 
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
-    USE_CUDNN_LSTM = False
+    START_CHAR = u'<BOS>'
+    END_CHAR = u'<EOS>'
 
-    def __init__(self, batch_size=64, epochs=100, use_conv_layer=False, kernel_size=3, n_filters=512, latent_dim=256,
-                 validation_split=0.2, grad_clipping=100.0, lr=0.001, rho=0.9, epsilon=K.epsilon(), lowercase=True,
-                 verbose=False):
+    def __init__(self, batch_size=64, epochs=100, use_conv_layer=False, embedding_size=None, char_ngram_size=1,
+                 kernel_size=3, n_filters=512, latent_dim=256, validation_split=0.2, grad_clipping=100.0, lr=0.001,
+                 rho=0.9, epsilon=K.epsilon(), dropout=0.5, recurrent_dropout=0.0, lowercase=True, verbose=False):
         """ Create a new object with specified parameters.
 
         :param batch_size: maximal number of texts or text pairs in the single mini-batch (positive integer).
         :param epochs: maximal number of training epochs (positive integer).
+        :param use_conv_layer: use of the 1D convolution layer before LSTM in the encoder.
+        :param embedding_size: size of the character N-gram embedding (if None, then embeddings are not calculated).
+        :param char_ngram_size: length of the character N-gram.
+        :param kernel_size: size of the convolution kernel if the convolution layer is used.
+        :param n_filters: number of output filters in the convolution if the convolution layer is used.
         :param latent_dim: number of units in the LSTM layer (positive integer).
         :param validation_split: the ratio of the evaluation set size to the total number of samples (float between 0
         and 1).
@@ -51,11 +58,15 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :param lr: learning rate (positive float)
         :param rho: parameter of the RMSprop algorithm (non-negative float).
         :param epsilon: fuzzy factor.
+        :param dropout: dropout factor for the LSTM layer.
+        :param recurrent_dropout: recurrent dropout factor for the LSTM layer.
         :param lowercase: need to bring all tokens of all texts to the lowercase.
         :param verbose: need to printing a training log.
 
         """
         self.batch_size = batch_size
+        self.embedding_size = embedding_size
+        self.char_ngram_size = char_ngram_size
         self.epochs = epochs
         self.latent_dim = latent_dim
         self.validation_split = validation_split
@@ -66,8 +77,18 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.kernel_size = kernel_size
         self.n_filters = n_filters
         self.epsilon = epsilon
+        self.dropout = dropout
+        self.recurrent_dropout = recurrent_dropout
         self.lowercase = lowercase
         self.verbose = verbose
+
+    def __del__(self):
+        if hasattr(self, 'encoder_model_') or hasattr(self, 'decoder_model_'):
+            if hasattr(self, 'encoder_model_'):
+                del self.encoder_model_
+            if hasattr(self, 'decoder_model_'):
+                del self.decoder_model_
+            K.clear_session()
 
     def fit(self, X, y, **kwargs):
         """ Fit the seq2seq model to convert sequences one to another.
@@ -127,20 +148,25 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         max_encoder_seq_length = 0
         max_decoder_seq_length = 0
         for sample_ind in range(len(X)):
-            prep = self.tokenize_text(X[sample_ind], self.lowercase)
+            prep = self.characters_to_ngrams(self.tokenize_text(X[sample_ind], self.lowercase),
+                                             self.char_ngram_size, False, False)
             n = len(prep)
-            if n == 0:
-                raise ValueError(u'Sample {0} of `X` is wrong! This sample is empty.'.format(sample_ind))
+            if n <= 0:
+                raise ValueError(u'Sample {0} of `X` is empty!'.format(sample_ind))
             if n > max_encoder_seq_length:
                 max_encoder_seq_length = n
-            input_characters |= set(prep)
+            for idx in range(n):
+                input_characters.add(prep[idx])
             prep = self.tokenize_text(y[sample_ind], self.lowercase)
             n = len(prep)
-            if n == 0:
-                raise ValueError(u'Sample {0} of `y` is wrong! This sample is empty.'.format(sample_ind))
-            if (n + 2) > max_decoder_seq_length:
-                max_decoder_seq_length = n + 2
-            target_characters |= set(prep)
+            if n < 0:
+                raise ValueError(u'Sample {0} of `y` is empty!'.format(sample_ind))
+            prep = self.characters_to_ngrams(prep, self.char_ngram_size, True, True)
+            n = len(prep)
+            if n > max_decoder_seq_length:
+                max_decoder_seq_length = n
+            for idx in range(n):
+                target_characters.add(prep[idx])
         if len(input_characters) == 0:
             raise ValueError(u'`X` is empty!')
         if len(target_characters) == 0:
@@ -149,26 +175,31 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         target_characters_ = set()
         if (X_eval_set is not None) and (y_eval_set is not None):
             for sample_ind in range(len(X_eval_set)):
-                prep = self.tokenize_text(X_eval_set[sample_ind], self.lowercase)
+                prep = self.characters_to_ngrams(self.tokenize_text(X_eval_set[sample_ind], self.lowercase),
+                                                 self.char_ngram_size, False, False)
                 n = len(prep)
-                if n == 0:
-                    raise ValueError(u'Sample {0} of `X_eval_set` is wrong! This sample is empty.'.format(sample_ind))
+                if n <= 0:
+                    raise ValueError(u'Sample {0} of `X_eval_set` is empty!'.format(sample_ind))
                 if n > max_encoder_seq_length:
                     max_encoder_seq_length = n
-                input_characters_ |= set(prep)
+                for idx in range(n):
+                    input_characters_.add(prep[idx])
                 prep = self.tokenize_text(y_eval_set[sample_ind], self.lowercase)
                 n = len(prep)
-                if n == 0:
-                    raise ValueError(u'Sample {0} of `y_eval_set` is wrong! This sample is empty.'.format(sample_ind))
-                if (n + 2) > max_decoder_seq_length:
-                    max_decoder_seq_length = n + 2
-                target_characters_ |= set(prep)
+                if n < 0:
+                    raise ValueError(u'Sample {0} of `y_eval_set` is empty!'.format(sample_ind))
+                prep = self.characters_to_ngrams(prep, self.char_ngram_size, True, True)
+                n = len(prep)
+                if n > max_decoder_seq_length:
+                    max_decoder_seq_length = n
+                for idx in range(n):
+                    target_characters_.add(prep[idx])
             if len(input_characters_) == 0:
                 raise ValueError(u'`X_eval_set` is empty!')
             if len(target_characters_) == 0:
                 raise ValueError(u'`y_eval_set` is empty!')
         input_characters = sorted(list(input_characters | input_characters_))
-        target_characters = sorted(list(target_characters | target_characters_ | {u'\t', u'\n'}))
+        target_characters = sorted(list(target_characters | target_characters_))
         if self.verbose:
             print(u'')
             print(u'Number of samples for training:', len(X))
@@ -183,24 +214,75 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.target_token_index_ = dict([(char, i) for i, char in enumerate(target_characters)])
         self.max_encoder_seq_length_ = max_encoder_seq_length
         self.max_decoder_seq_length_ = max_decoder_seq_length
-        encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-        if self.USE_CUDNN_LSTM:
-            encoder = CuDNNLSTM(self.latent_dim, return_sequences=False, return_state=True)
+        if self.embedding_size is not None:
+            if self.verbose:
+                print(u'Calculation of the character N-gram embeddings is started...')
+            self.input_embeddings_matrix_ = self.create_character_embeddings(
+                self.input_token_index_,
+                map(
+                    lambda idx: (X[idx] if (idx < len(X)) else X_eval_set[idx - len(X)]),
+                    range(len(X) + (0 if X_eval_set is None else len(X_eval_set)))
+                ),
+                self.lowercase, self.char_ngram_size,
+                False, False,
+                self.embedding_size
+            )
+            self.output_embeddings_matrix_ = self.create_character_embeddings(
+                self.target_token_index_,
+                map(
+                    lambda idx: (y[idx] if (idx < len(y)) else y_eval_set[idx - len(y)]),
+                    range(len(y) + (0 if y_eval_set is None else len(y_eval_set)))
+                ),
+                self.lowercase, self.char_ngram_size,
+                True, True,
+                self.embedding_size
+            )
+            if self.verbose:
+                print(u'')
+                print(u'Calculation of the character N-gram embeddings is finished...')
+                print(u'')
         else:
-            encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True, recurrent_activation='sigmoid')
+            self.input_embeddings_matrix_ = None
+            self.output_embeddings_matrix_ = None
+        if self.input_embeddings_matrix_ is None:
+            encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
+            encoder_embeddings = None
+        else:
+            encoder_inputs = Input(shape=(None,))
+            encoder_embeddings = Embedding(
+                input_dim=self.input_embeddings_matrix_.shape[0], output_dim=self.input_embeddings_matrix_.shape[1],
+                weights=[self.input_embeddings_matrix_], trainable=False, mask_zero=False
+            )(encoder_inputs)
+        encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True, recurrent_activation='hard_sigmoid',
+                       activation='tanh', dropout=self.dropout, recurrent_dropout=self.recurrent_dropout)
         if self.use_conv_layer:
-            encoder_outputs, state_h, state_c = encoder(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
-                                                               padding='valid', activation='relu')(encoder_inputs))
+            encoder_outputs, state_h, state_c = encoder(
+                Masking(mask_value=0.0)(
+                    Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='valid', activation='relu',
+                           use_bias=False)(encoder_inputs if encoder_embeddings is None else encoder_embeddings)
+                )
+            )
         else:
-            encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+            encoder_outputs, state_h, state_c = encoder(Masking(mask_value=0.0)(
+                encoder_inputs if encoder_embeddings is None else encoder_embeddings)
+            )
         encoder_states = [state_h, state_c]
-        decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
-        if self.USE_CUDNN_LSTM:
-            decoder_lstm = CuDNNLSTM(self.latent_dim, return_sequences=True, return_state=True)
+        if self.output_embeddings_matrix_ is None:
+            decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
+            decoder_embeddings = None
         else:
-            decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True,
-                                recurrent_activation='sigmoid')
-        decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
+            decoder_inputs = Input(shape=(None,))
+            decoder_embeddings = Embedding(
+                input_dim=self.output_embeddings_matrix_.shape[0], output_dim=self.output_embeddings_matrix_.shape[1],
+                weights=[self.output_embeddings_matrix_], trainable=False, mask_zero=False
+            )(decoder_inputs)
+        decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True, activation='tanh',
+                            recurrent_activation='hard_sigmoid', dropout=self.dropout,
+                            recurrent_dropout=self.recurrent_dropout)
+        decoder_outputs, _, _ = decoder_lstm(
+            Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
+            initial_state=encoder_states
+        )
         decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
         decoder_outputs = decoder_dense(decoder_outputs)
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
@@ -211,7 +293,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             print(u'')
         training_set_generator = TextPairSequence(
             input_texts=X, target_texts=y,
-            batch_size=self.batch_size,
+            batch_size=self.batch_size, char_ngram_size=self.char_ngram_size,
+            use_embeddings=(self.embedding_size is not None),
             max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
             input_token_index=self.input_token_index_, target_token_index=self.target_token_index_,
             lowercase=self.lowercase
@@ -219,7 +302,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         if (X_eval_set is not None) and (y_eval_set is not None):
             evaluation_set_generator = TextPairSequence(
                 input_texts=X_eval_set, target_texts=y_eval_set,
-                batch_size=self.batch_size,
+                batch_size=self.batch_size, char_ngram_size=self.char_ngram_size,
+                use_embeddings=(self.embedding_size is not None),
                 max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
                 input_token_index=self.input_token_index_, target_token_index=self.target_token_index_,
                 lowercase=self.lowercase
@@ -252,14 +336,16 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         decoder_state_input_h = Input(shape=(self.latent_dim,))
         decoder_state_input_c = Input(shape=(self.latent_dim,))
         decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-        decoder_outputs, state_h, state_c = decoder_lstm(decoder_inputs, initial_state=decoder_states_inputs)
+        decoder_outputs, state_h, state_c = decoder_lstm(
+            Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
+            initial_state=decoder_states_inputs
+        )
         decoder_states = [state_h, state_c]
         decoder_outputs = decoder_dense(decoder_outputs)
         self.decoder_model_ = Model(
             [decoder_inputs] + decoder_states_inputs,
             [decoder_outputs] + decoder_states)
-        self.reverse_target_char_index_ = dict(
-            (i, char) for char, i in self.target_token_index_.items())
+        self.reverse_target_char_index_ = dict((i, char) for char, i in self.target_token_index_.items())
         return self
 
     def predict(self, X):
@@ -274,20 +360,28 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         """
         self.check_X(X, u'X')
         check_is_fitted(self, ['input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
-                               'max_encoder_seq_length_', 'max_decoder_seq_length_',
-                               'encoder_model_', 'decoder_model_'])
+                               'max_encoder_seq_length_', 'max_decoder_seq_length_', 'encoder_model_', 'decoder_model_',
+                               'input_embeddings_matrix_', 'output_embeddings_matrix_'])
         texts = list()
+        use_embeddings = (self.embedding_size is not None)
         for input_seq in Seq2SeqLSTM.generate_data_for_prediction(
-                input_texts=X, batch_size=self.batch_size, max_encoder_seq_length=self.max_encoder_seq_length_,
-                input_token_index=self.input_token_index_, lowercase=self.lowercase
+                input_texts=X, batch_size=self.batch_size, char_ngram_size=self.char_ngram_size,
+                max_encoder_seq_length=self.max_encoder_seq_length_, input_token_index=self.input_token_index_,
+                lowercase=self.lowercase, use_embeddings=use_embeddings
         ):
             batch_size = input_seq.shape[0]
             states_value = self.encoder_model_.predict(input_seq)
-            target_seq = np.zeros((batch_size, 1, len(self.target_token_index_)), dtype=np.float32)
+            if use_embeddings:
+                target_seq = np.zeros((batch_size, 1), dtype=np.int32)
+            else:
+                target_seq = np.zeros((batch_size, 1, len(self.target_token_index_)), dtype=np.float32)
             stop_conditions = []
             decoded_sentences = []
             for text_idx in range(batch_size):
-                target_seq[text_idx, 0, self.target_token_index_[u'\t']] = 1.0
+                if use_embeddings:
+                    target_seq[text_idx, 0] = self.target_token_index_[(self.START_CHAR,)] + 1
+                else:
+                    target_seq[text_idx, 0, self.target_token_index_[(self.START_CHAR,)]] = 1.0
                 stop_conditions.append(False)
                 decoded_sentences.append([])
             while not all(stop_conditions):
@@ -297,15 +391,21 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     if stop_conditions[text_idx]:
                         continue
                     sampled_char = self.reverse_target_char_index_[indices_of_sampled_tokens[text_idx]]
-                    decoded_sentences[text_idx].append(sampled_char)
-                    if (sampled_char == u'\n') or (len(decoded_sentences[text_idx]) > self.max_decoder_seq_length_):
+                    if sampled_char == (self.END_CHAR,):
                         stop_conditions[text_idx] = True
-                    for token_idx in range(len(self.target_token_index_)):
-                        target_seq[text_idx][0][token_idx] = 0.0
-                    target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
+                    else:
+                        decoded_sentences[text_idx].append(sampled_char)
+                        if len(decoded_sentences[text_idx]) >= self.max_decoder_seq_length_:
+                            stop_conditions[text_idx] = True
+                    if use_embeddings:
+                        target_seq[text_idx, 0] = indices_of_sampled_tokens[text_idx] + 1
+                    else:
+                        for token_idx in range(len(self.target_token_index_)):
+                            target_seq[text_idx][0][token_idx] = 0.0
+                        target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
                 states_value = [h, c]
             for text_idx in range(batch_size):
-                texts.append(u' '.join(decoded_sentences[text_idx]))
+                texts.append(u' '.join([val[self.char_ngram_size // 2] for val in decoded_sentences[text_idx]]))
             del input_seq
         if isinstance(X, tuple):
             return tuple(texts)
@@ -335,30 +435,52 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 type(weights_as_bytes[1])))
         tmp_weights_name = self.get_temp_name()
         try:
-            encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-            if self.USE_CUDNN_LSTM:
-                encoder = CuDNNLSTM(self.latent_dim, return_sequences=False, return_state=True)
+            if self.input_embeddings_matrix_ is None:
+                encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
+                encoder_embeddings = None
             else:
-                encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True,
-                               recurrent_activation='sigmoid')
+                encoder_inputs = Input(shape=(None,))
+                encoder_embeddings = Embedding(
+                    input_dim=self.input_embeddings_matrix_.shape[0], output_dim=self.input_embeddings_matrix_.shape[1],
+                    weights=[self.input_embeddings_matrix_], trainable=False, mask_zero=False
+                )(encoder_inputs)
+            encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True, activation='tanh',
+                           recurrent_activation='hard_sigmoid', dropout=self.dropout,
+                           recurrent_dropout=self.recurrent_dropout)
             if self.use_conv_layer:
-                encoder_outputs, state_h, state_c = encoder(Conv1D(kernel_size=self.kernel_size, filters=self.n_filters,
-                                                                   padding='valid', activation='relu')(encoder_inputs))
+                encoder_outputs, state_h, state_c = encoder(
+                    Masking(mask_value=0.0)(
+                        Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='valid', activation='relu',
+                               use_bias=False)(encoder_inputs if encoder_embeddings is None else encoder_embeddings)
+                    )
+                )
             else:
-                encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+                encoder_outputs, state_h, state_c = encoder(
+                    Masking(mask_value=0.0)(encoder_inputs if encoder_embeddings is None else encoder_embeddings)
+                )
             encoder_states = [state_h, state_c]
-            decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
-            if self.USE_CUDNN_LSTM:
-                decoder_lstm = CuDNNLSTM(self.latent_dim, return_sequences=True, return_state=True)
+            if self.output_embeddings_matrix_ is None:
+                decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
+                decoder_embeddings = None
             else:
-                decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True,
-                                    recurrent_activation='sigmoid')
+                decoder_inputs = Input(shape=(None,))
+                decoder_embeddings = Embedding(
+                    input_dim=self.output_embeddings_matrix_.shape[0],
+                    output_dim=self.output_embeddings_matrix_.shape[1],
+                    weights=[self.output_embeddings_matrix_], trainable=False, mask_zero=False
+                )(decoder_inputs)
+            decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True, activation='tanh',
+                                recurrent_activation='hard_sigmoid', dropout=self.dropout,
+                                recurrent_dropout=self.recurrent_dropout)
             decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
             self.encoder_model_ = Model(encoder_inputs, encoder_states)
             decoder_state_input_h = Input(shape=(self.latent_dim,))
             decoder_state_input_c = Input(shape=(self.latent_dim,))
             decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-            decoder_outputs, state_h, state_c = decoder_lstm(decoder_inputs, initial_state=decoder_states_inputs)
+            decoder_outputs, state_h, state_c = decoder_lstm(
+                Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
+                initial_state=decoder_states_inputs
+            )
             decoder_states = [state_h, state_c]
             decoder_outputs = decoder_dense(decoder_outputs)
             self.decoder_model_ = Model(
@@ -383,8 +505,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         neural decoder respectively.
         """
         check_is_fitted(self, ['input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
-                               'max_encoder_seq_length_', 'max_decoder_seq_length_',
-                               'encoder_model_', 'decoder_model_'])
+                               'max_encoder_seq_length_', 'max_decoder_seq_length_', 'encoder_model_', 'decoder_model_',
+                               'input_embeddings_matrix_', 'output_embeddings_matrix_'])
         tmp_weights_name = self.get_temp_name()
         try:
             if os.path.isfile(tmp_weights_name):
@@ -413,8 +535,10 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :return Parameter names mapped to their values.
 
         """
-        return {'batch_size': self.batch_size, 'epochs': self.epochs, 'latent_dim': self.latent_dim,
+        return {'batch_size': self.batch_size, 'embedding_size': self.embedding_size,
+                'char_ngram_size': self.char_ngram_size, 'epochs': self.epochs, 'latent_dim': self.latent_dim,
                 'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho, 'epsilon': self.epsilon,
+                'dropout': self.dropout, 'recurrent_dropout': self.recurrent_dropout,
                 'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping,
                 'use_conv_layer': self.use_conv_layer, 'kernel_size': self.kernel_size, 'n_filters': self.n_filters}
 
@@ -442,14 +566,16 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         """
         try:
             check_is_fitted(self, ['input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
-                                   'max_encoder_seq_length_', 'max_decoder_seq_length_',
-                                   'encoder_model_', 'decoder_model_'])
+                                   'max_encoder_seq_length_', 'max_decoder_seq_length_', 'encoder_model_',
+                                   'decoder_model_', 'input_embeddings_matrix_', 'output_embeddings_matrix_'])
             is_trained = True
         except:
             is_trained = False
         params = self.get_params(True)
         if is_trained:
             params['weights'] = self.dump_weights()
+            params['input_embeddings_matrix_'] = copy.deepcopy(self.input_embeddings_matrix_)
+            params['output_embeddings_matrix_'] = copy.deepcopy(self.output_embeddings_matrix_)
             params['input_token_index_'] = copy.deepcopy(self.input_token_index_)
             params['target_token_index_'] = copy.deepcopy(self.target_token_index_)
             params['reverse_target_char_index_'] = copy.deepcopy(self.reverse_target_char_index_)
@@ -470,22 +596,27 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         if not isinstance(new_params, dict):
             raise ValueError(u'`new_params` is wrong! Expected {0}.'.format(type({0: 1})))
         self.check_params(**new_params)
-        expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'validation_split', 'lr', 'rho',
-                               'epsilon', 'lowercase', 'verbose', 'grad_clipping', 'n_filters', 'kernel_size',
-                               'use_conv_layer'}
+        expected_param_keys = {'batch_size', 'epochs', 'embedding_size', 'char_ngram_size', 'latent_dim',
+                               'validation_split', 'lr', 'rho', 'epsilon', 'dropout', 'recurrent_dropout', 'lowercase',
+                               'verbose', 'grad_clipping', 'n_filters', 'kernel_size', 'use_conv_layer'}
         params_after_training = {'weights', 'input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
-                                 'max_encoder_seq_length_', 'max_decoder_seq_length_'}
+                                 'max_encoder_seq_length_', 'max_decoder_seq_length_', 'input_embeddings_matrix_',
+                                 'output_embeddings_matrix_'}
         is_fitted = len(set(new_params.keys())) > len(expected_param_keys)
         if is_fitted:
             if set(new_params.keys()) != (expected_param_keys | params_after_training):
                 raise ValueError(u'`new_params` does not contain all expected keys!')
         self.batch_size = new_params['batch_size']
+        self.embedding_size = new_params['embedding_size']
+        self.char_ngram_size = new_params['char_ngram_size']
         self.epochs = new_params['epochs']
         self.latent_dim = new_params['latent_dim']
         self.validation_split = new_params['validation_split']
         self.lr = new_params['lr']
         self.rho = new_params['rho']
         self.epsilon = new_params['epsilon']
+        self.dropout = new_params['dropout']
+        self.recurrent_dropout = new_params['recurrent_dropout']
         self.lowercase = new_params['lowercase']
         self.verbose = new_params['verbose']
         self.grad_clipping = new_params['grad_clipping']
@@ -493,30 +624,58 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.n_filters = new_params['n_filters']
         self.kernel_size = new_params['kernel_size']
         if is_fitted:
+            if new_params['input_embeddings_matrix_'] is not None:
+                if not isinstance(new_params['input_embeddings_matrix_'], np.ndarray):
+                    raise ValueError(
+                        u'`new_params` is wrong! `input_embeddings_matrix_` must be a `{0}`!'.format(
+                            type(np.array([[1, 2], [3, 4]]))
+                        )
+                    )
+                if new_params['input_embeddings_matrix_'].ndim != 2:
+                    raise ValueError(
+                        u'`new_params` is wrong! `input_embeddings_matrix_` must be a 2-D array, but {0} != 2!'.format(
+                            new_params['input_embeddings_matrix_'].ndim
+                        )
+                    )
+            if new_params['output_embeddings_matrix_'] is not None:
+                if not isinstance(new_params['output_embeddings_matrix_'], np.ndarray):
+                    raise ValueError(
+                        u'`new_params` is wrong! `output_embeddings_matrix_` must be a `{0}`!'.format(
+                            type(np.array([[1, 2], [3, 4]]))
+                        )
+                    )
+                if new_params['output_embeddings_matrix_'].ndim != 2:
+                    raise ValueError(
+                        u'`new_params` is wrong! `output_embeddings_matrix_` must be a 2-D array, but {0} != 2!'.format(
+                            new_params['output_embeddings_matrix_'].ndim
+                        )
+                    )
             if not isinstance(new_params['input_token_index_'], dict):
-                raise ValueError(u'`new_params` is wrong! `input_token_index_` must be the `{0}`!'.format(
+                raise ValueError(u'`new_params` is wrong! `input_token_index_` must be a `{0}`!'.format(
                     type({1: 'a', 2: 'b'})))
             if not isinstance(new_params['target_token_index_'], dict):
-                raise ValueError(u'`new_params` is wrong! `target_token_index_` must be the `{0}`!'.format(
+                raise ValueError(u'`new_params` is wrong! `target_token_index_` must be a `{0}`!'.format(
                     type({1: 'a', 2: 'b'})))
             if not isinstance(new_params['reverse_target_char_index_'], dict):
-                raise ValueError(u'`new_params` is wrong! `reverse_target_char_index_` must be the `{0}`!'.format(
+                raise ValueError(u'`new_params` is wrong! `reverse_target_char_index_` must be a `{0}`!'.format(
                     type({1: 'a', 2: 'b'})))
             if not isinstance(new_params['max_encoder_seq_length_'], int):
-                raise ValueError(u'`new_params` is wrong! `max_encoder_seq_length_` must be the `{0}`!'.format(
+                raise ValueError(u'`new_params` is wrong! `max_encoder_seq_length_` must be a `{0}`!'.format(
                     type(10)))
             if new_params['max_encoder_seq_length_'] < 1:
                 raise ValueError(u'`new_params` is wrong! `max_encoder_seq_length_` must be a positive integer number!')
             if not isinstance(new_params['max_decoder_seq_length_'], int):
-                raise ValueError(u'`new_params` is wrong! `max_decoder_seq_length_` must be the `{0}`!'.format(
+                raise ValueError(u'`new_params` is wrong! `max_decoder_seq_length_` must be a `{0}`!'.format(
                     type(10)))
             if new_params['max_decoder_seq_length_'] < 1:
                 raise ValueError(u'`new_params` is wrong! `max_decoder_seq_length_` must be a positive integer number!')
             self.max_decoder_seq_length_ = new_params['max_decoder_seq_length_']
             self.max_encoder_seq_length_ = new_params['max_encoder_seq_length_']
-            self.input_token_index_ = copy.deepcopy(new_params['input_token_index_'])
-            self.target_token_index_ = copy.deepcopy(new_params['target_token_index_'])
-            self.reverse_target_char_index_ = copy.deepcopy(new_params['reverse_target_char_index_'])
+            self.input_token_index_ = new_params['input_token_index_']
+            self.target_token_index_ = new_params['target_token_index_']
+            self.reverse_target_char_index_ = new_params['reverse_target_char_index_']
+            self.input_embeddings_matrix_ = new_params['input_embeddings_matrix_']
+            self.output_embeddings_matrix_ = new_params['output_embeddings_matrix_']
             self.load_weights(new_params['weights'])
         return self
 
@@ -562,6 +721,23 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         if kwargs['batch_size'] < 1:
             raise ValueError(u'`batch_size` must be a positive number! {0} is not positive.'.format(
                 kwargs['batch_size']))
+        if 'embedding_size' not in kwargs:
+            raise ValueError(u'`embedding_size` is not found!')
+        if kwargs['embedding_size'] is not None:
+            if not isinstance(kwargs['embedding_size'], int):
+                raise ValueError(u'`embedding_size` must be `{0}`, not `{1}`.'.format(
+                    type(10), type(kwargs['embedding_size'])))
+            if kwargs['embedding_size'] < 1:
+                raise ValueError(u'`embedding_size` must be a positive number! {0} is not positive.'.format(
+                    kwargs['embedding_size']))
+        if 'char_ngram_size' not in kwargs:
+            raise ValueError(u'`char_ngram_size` is not found!')
+        if not isinstance(kwargs['char_ngram_size'], int):
+            raise ValueError(u'`char_ngram_size` must be `{0}`, not `{1}`.'.format(
+                type(10), type(kwargs['char_ngram_size'])))
+        if kwargs['char_ngram_size'] < 1:
+            raise ValueError(u'`char_ngram_size` must be a positive number! {0} is not positive.'.format(
+                kwargs['char_ngram_size']))
         if 'epochs' not in kwargs:
             raise ValueError(u'`epochs` is not found!')
         if not isinstance(kwargs['epochs'], int):
@@ -612,6 +788,20 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     type(1.5), type(kwargs['validation_split'])))
             if (kwargs['validation_split'] <= 0.0) or (kwargs['validation_split'] >= 1.0):
                 raise ValueError(u'`validation_split` must be in interval (0.0, 1.0)!')
+        if 'dropout' not in kwargs:
+            raise ValueError(u'`dropout` is not found!')
+        if not isinstance(kwargs['dropout'], float):
+            raise ValueError(u'`dropout` must be `{0}`, not `{1}`.'.format(
+                type(1.5), type(kwargs['dropout'])))
+        if (kwargs['dropout'] < 0.0) or (kwargs['dropout'] >= 1.0):
+            raise ValueError(u'`dropout` must be in interval [0.0, 1.0)!')
+        if 'recurrent_dropout' not in kwargs:
+            raise ValueError(u'`recurrent_dropout` is not found!')
+        if not isinstance(kwargs['recurrent_dropout'], float):
+            raise ValueError(u'`recurrent_dropout` must be `{0}`, not `{1}`.'.format(
+                type(1.5), type(kwargs['recurrent_dropout'])))
+        if (kwargs['recurrent_dropout'] < 0.0) or (kwargs['recurrent_dropout'] >= 1.0):
+            raise ValueError(u'`recurrent_dropout` must be in interval [0.0, 1.0)!')
         if 'lr' not in kwargs:
             raise ValueError(u'`lr` is not found!')
         if not isinstance(kwargs['lr'], float):
@@ -658,6 +848,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             if not hasattr(X[sample_ind], 'split'):
                 raise ValueError(u'Sample {0} of `{1}` is wrong! This sample have not the `split` method.'.format(
                     sample_ind, checked_object_name))
+            if X[sample_ind].find(u'_') >= 0:
+                raise ValueError(u'Sample {0} of `{1}` is wrong! It contains the special character `_`.'.format(
+                    sample_ind, checked_object_name))
 
     @staticmethod
     def tokenize_text(src, lowercase):
@@ -685,21 +878,56 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         return file_name
 
     @staticmethod
-    def generate_data_for_prediction(input_texts, batch_size, max_encoder_seq_length, input_token_index, lowercase):
-        """ Generate feature matrices based on one-hot vectorization for input texts by mini-batches.
+    def characters_to_ngrams(characters, char_ngram_size, with_starting_char, with_ending_char):
+        """ Group the input character sequence by the character-level N-grams with the specified N.
+
+        :param characters: input sequence of characters.
+        :param char_ngram_size: specified N (size of the character N-gram).
+        :param with_starting_char: need to insert a special starting quasi-character before the resulting sequence.
+        :param with_ending_char: need to add a special ending quasi-character after the resulting sequence.
+
+        :return the resulting sequence of character N-grams.
+        """
+        T = len(characters)
+        res = []
+        if T > 0:
+            for t in range(T):
+                start_idx = t - char_ngram_size // 2
+                end_idx = start_idx + char_ngram_size
+                char_ngram = characters[max(0, start_idx):min(end_idx, T)]
+                if start_idx < 0:
+                    char_ngram = [Seq2SeqLSTM.START_CHAR] * (-start_idx) + char_ngram
+                if end_idx > T:
+                    char_ngram += [Seq2SeqLSTM.END_CHAR] * (end_idx - T)
+                res.append(tuple(char_ngram))
+        if with_starting_char:
+            res = [(Seq2SeqLSTM.START_CHAR,)] + res
+        if with_ending_char:
+            res.append((Seq2SeqLSTM.END_CHAR,))
+        return res
+
+
+    @staticmethod
+    def generate_data_for_prediction(input_texts, batch_size, char_ngram_size, use_embeddings, max_encoder_seq_length,
+                                     input_token_index, lowercase):
+        """ Generate feature matrices based on one-hot vectorization (or embeddings) for input texts by mini-batches.
 
         This generator is used in the prediction process by means of the trained neural model. Each text is a unicode
-        string in which all tokens are separated by spaces. It generates a 3-D array (numpy.ndarray object), using
-        one-hot enconding (first dimension is index of text in the mini-batch, second dimension is a timestep, or token
-        position in this text, and third dimension is index of this token in the input vocabulary).
+        string in which all tokens are separated by spaces. If `use_embeddings` is False, then it generates a 3-D array
+        (numpy.ndarray object), using one-hot enconding (first dimension is index of text in the mini-batch,
+        second dimension is a timestep, or token position in this text, and third dimension is index of this token in
+        the input vocabulary). In other case (if `use_embeddings` is True) this method generates a 2-D array with
+        indices of all sequence tokens in the corresponding vocabulary.
 
         :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
         :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
+        :param char_ngram_size: size of the character-level N-gram.
+        :param use_embeddings: use of embeddings as inputs for encoder and decoder.
         :param max_encoder_seq_length: maximal length of any input text.
         :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
         :param lowercase: the need to bring all tokens of all texts to the lowercase.
 
-        :return the 3-D array representation of input mini-batch data.
+        :return the 3-D or 2-D array representation of input mini-batch data.
 
         """
         n = len(input_texts)
@@ -709,47 +937,154 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         start_pos = 0
         for batch_ind in range(n_batches - 1):
             end_pos = start_pos + batch_size
-            encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
-                                          dtype=np.float32)
+            if use_embeddings:
+                encoder_input_data = np.zeros((batch_size, max_encoder_seq_length), dtype=np.int32)
+            else:
+                encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
+                                              dtype=np.float32)
             for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-                for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-                    if t >= max_encoder_seq_length:
-                        break
-                    encoder_input_data[i, t, input_token_index[char]] = 1.0
+                tokenized_text = Seq2SeqLSTM.tokenize_text(input_text, lowercase)
+                T = len(tokenized_text)
+                if T <= 0:
+                    continue
+                tokenized_ngrams = Seq2SeqLSTM.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
+                if use_embeddings:
+                    for t in range(T):
+                        if t >= max_encoder_seq_length:
+                            break
+                        encoder_input_data[i, t] = input_token_index[tokenized_ngrams[t]] + 1
+                else:
+                    for t in range(T):
+                        if t >= max_encoder_seq_length:
+                            break
+                        encoder_input_data[i, t, input_token_index[tokenized_ngrams[t]]] = 1.0
             start_pos = end_pos
             yield encoder_input_data
         end_pos = n
-        encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
-                                      dtype=np.float32)
+        if use_embeddings:
+            encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length), dtype=np.int32)
+        else:
+            encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
+                                          dtype=np.float32)
         for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
-                if t >= max_encoder_seq_length:
-                    break
-                encoder_input_data[i, t, input_token_index[char]] = 1.0
+            tokenized_text = Seq2SeqLSTM.tokenize_text(input_text, lowercase)
+            T = len(tokenized_text) - char_ngram_size + 1
+            if T <= 0:
+                continue
+            tokenized_ngrams = Seq2SeqLSTM.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
+            if use_embeddings:
+                for t in range(T):
+                    if t >= max_encoder_seq_length:
+                        break
+                    encoder_input_data[i, t] = input_token_index[tokenized_ngrams[t]] + 1
+            else:
+                for t in range(T):
+                    if t >= max_encoder_seq_length:
+                        break
+                    encoder_input_data[i, t, input_token_index[tokenized_ngrams[t]]] = 1.0
         yield encoder_input_data
+
+    @staticmethod
+    def create_character_embeddings(vocabulary, texts, lowercase, char_ngram_size, with_starting_char, with_ending_char,
+                                    word2vec_size=50):
+        """ Create embeddings of character-level N-grams using the Word2Vec approach.
+
+        :param vocabulary: dictionary of all N-grams (key is N-gram, and value is the index of this N-gram).
+        :param texts: all source (untokenized) texts.
+        :param char_ngram_size: size of the character-level N-gram.
+        :param with_starting_char: need to insert a special starting quasi-character before the tokenized sequence.
+        :param with_ending_char: need to add a special ending quasi-character after the tokenized sequence.
+        :param word2vec_size: embedding size.
+
+        :return matrix of all character-level N-gram embeddings (rows correspond to N-grams).
+        """
+        vocabulary_ = set()
+        tokenized = []
+        for cur_text in texts:
+            prep_text = Seq2SeqLSTM.tokenize_text(cur_text, lowercase)
+            if len(prep_text) > 0:
+                prep_text = Seq2SeqLSTM.characters_to_ngrams(prep_text, char_ngram_size, False, False)
+                vocabulary_ |= set(prep_text)
+                tokenized.append(
+                    list(map(
+                        lambda it2: u'_'.join(it2),
+                        filter(lambda it1: it1 not in {(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.END_CHAR,)}, prep_text)
+                    ))
+                )
+        if (vocabulary_ - {(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.END_CHAR,)}) != \
+                (set(vocabulary.keys()) - {(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.END_CHAR,)}):
+            raise ValueError(u'Texts contain words not out of vocabulary!')
+        if with_starting_char:
+            starting_char_idx = vocabulary.get((Seq2SeqLSTM.START_CHAR,), -1)
+            if starting_char_idx < 0:
+                raise ValueError('')
+        else:
+            starting_char_idx = -1
+        if with_ending_char:
+            ending_char_idx = vocabulary.get((Seq2SeqLSTM.END_CHAR,), -1)
+            if ending_char_idx < 0:
+                raise ValueError('')
+        else:
+            ending_char_idx = -1
+        w2v_model = Word2Vec(tokenized, min_count=1, size=word2vec_size, window=10, sg=1, hs=1, negative=0,
+                             max_vocab_size=None, iter=3, workers=os.cpu_count())
+        del tokenized
+        n = word2vec_size
+        if with_starting_char:
+            n += 1
+        if with_ending_char:
+            n += 1
+        embeddings_matrix = np.zeros((len(vocabulary), n), dtype=np.float32)
+        for char_ngram in vocabulary:
+            idx = vocabulary[char_ngram]
+            if idx == starting_char_idx:
+                embeddings_matrix[idx, word2vec_size] = 1.0
+            elif idx == ending_char_idx:
+                embeddings_matrix[idx, min(word2vec_size + 1, n - 1)] = 1.0
+            else:
+                embeddings_matrix[idx, :word2vec_size] = w2v_model.wv['_'.join(char_ngram)]
+                embeddings_matrix[idx] /= np.linalg.norm(embeddings_matrix[idx])
+        del w2v_model
+        return np.vstack((np.zeros((1, embeddings_matrix.shape[1]), dtype=np.float32), embeddings_matrix))
 
 
 class TextPairSequence(Sequence):
     """ Object for fitting to a sequence of text pairs without calculating features for all these pairs in memory.
 
     """
-    def __init__(self, input_texts, target_texts, batch_size, max_encoder_seq_length, max_decoder_seq_length,
-                 input_token_index, target_token_index, lowercase):
-        """ Generate feature matrices based on one-hot vectorization for pairs of texts by mini-batches.
+    def __init__(self, input_texts, target_texts, batch_size, char_ngram_size, use_embeddings,
+                 max_encoder_seq_length, max_decoder_seq_length, input_token_index, target_token_index, lowercase):
+        """ Generate feature matrices based on one-hot vectorization (or embeddings) for pairs of texts by mini-batches.
 
         This generator is used in the training process of the neural model (see the `fit_generator` method of the Keras
         `Model` object). Each text (input or target one) is a unicode string in which all tokens are separated by
-        spaces. Each pair of texts generates three 3-D arrays (numpy.ndarray objects):
+        spaces. Each pair of texts generates three 3-D arrays (if `use_embeddings` is False) or two 2-D arrays and one
+        3-D array (if `use_embeddings` is True). All arrays are numpy.ndarray objects.
+
+        If `use_embeddings` is False, then the one-hot vectorization is used, and the above mentioned arrays are:
 
         1) one-hot vectorization of corresponded input text (first dimension is index of text in the mini-batch, second
         dimension is a timestep, or token position in this text, and third dimension is index of this token in the input
         vocabulary);
 
-        2) one-hot vectorization of corresponded target text (first dimension is index of text in the mini-batch, second
-        dimension is a timestep, or token position in this text, and third dimension is index of this token in the
-        target vocabulary);
+        2) one-hot vectorization of corresponded target text with special starting and ending characters (first
+        dimension is index of text in the mini-batch, second dimension is a timestep, or token position in this text,
+        and third dimension is index of this token in the target vocabulary);
 
-        3) array is the same as second one but offset by one timestep.
+        3) array is the same as second one but offset by one timestep, i.e. without special starting character.
+
+        If `use_embeddings` is True, then the embeddings vectorization of input data are used, and the above mentioned
+        arrays are:
+
+        1) token indices of corresponded input text in the input vocabulary (first dimension is index of text in the
+        mini-batch, and second dimension is a timestep, or token position in this text);
+
+        2) token indices of corresponded target text in the target vocabulary (first dimension is index of text in the
+        mini-batch, and second dimension is a timestep, or token position in this text);
+
+        3) one-hot vectorization of corresponded target text with special ending character, but without special starting
+        character (first dimension is index of text in the mini-batch, second dimension is a timestep, or token position
+        in this text, and third dimension is index of this token in the target vocabulary).
 
         In the training process first and second array will be fed into the neural model, and third array will be
         considered as its desired output.
@@ -757,11 +1092,13 @@ class TextPairSequence(Sequence):
         :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
         :param target_texts: sequence (list, tuple or numpy.ndarray) of target texts.
         :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
+        :param char_ngram_size: length of the character-level N-gram.
+        :param use_embeddings: need to use embeddings as tokens vectorization (if False, then one-hot encoding is used).
         :param max_encoder_seq_length: maximal length of any input text.
         :param max_decoder_seq_length: maximal length of any target text.
         :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
         :param target_token_index: the special index for one-hot encoding any target text as numerical feature matrix.
-        :param lowercase: the need to bring all tokens of all texts to the lowercase.
+        :param lowercase: need to bring all tokens of all texts to the lowercase.
 
         :return the two-element tuple with input and output mini-batch data for the neural model training respectively.
 
@@ -769,6 +1106,8 @@ class TextPairSequence(Sequence):
         self.input_texts = input_texts
         self.target_texts = target_texts
         self.batch_size = batch_size
+        self.char_ngram_size = char_ngram_size
+        self.use_embeddings = use_embeddings
         self.max_encoder_seq_length = max_encoder_seq_length
         self.max_decoder_seq_length = max_decoder_seq_length
         self.input_token_index = input_token_index
@@ -785,10 +1124,14 @@ class TextPairSequence(Sequence):
     def __getitem__(self, idx):
         start_pos = idx * self.batch_size
         end_pos = start_pos + self.batch_size
-        encoder_input_data = np.zeros((self.batch_size, self.max_encoder_seq_length, len(self.input_token_index)),
-                                      dtype=np.float32)
-        decoder_input_data = np.zeros((self.batch_size, self.max_decoder_seq_length, len(self.target_token_index)),
-                                      dtype=np.float32)
+        if self.use_embeddings:
+            encoder_input_data = np.zeros((self.batch_size, self.max_encoder_seq_length), dtype=np.int32)
+            decoder_input_data = np.zeros((self.batch_size, self.max_decoder_seq_length), dtype=np.int32)
+        else:
+            encoder_input_data = np.zeros((self.batch_size, self.max_encoder_seq_length, len(self.input_token_index)),
+                                          dtype=np.float32)
+            decoder_input_data = np.zeros((self.batch_size, self.max_decoder_seq_length, len(self.target_token_index)),
+                                          dtype=np.float32)
         decoder_target_data = np.zeros((self.batch_size, self.max_decoder_seq_length, len(self.target_token_index)),
                                        dtype=np.float32)
         idx_in_batch = 0
@@ -796,13 +1139,33 @@ class TextPairSequence(Sequence):
             prep_text_idx = src_text_idx
             while prep_text_idx >= self.n_text_pairs:
                 prep_text_idx = prep_text_idx - self.n_text_pairs
-            input_text = self.input_texts[prep_text_idx]
-            target_text = self.target_texts[prep_text_idx]
-            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, self.lowercase)):
-                encoder_input_data[idx_in_batch, t, self.input_token_index[char]] = 1.0
-            for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, self.lowercase) + [u'\n']):
-                decoder_input_data[idx_in_batch, t, self.target_token_index[char]] = 1.0
-                if t > 0:
-                    decoder_target_data[idx_in_batch, t - 1, self.target_token_index[char]] = 1.0
+            input_text = Seq2SeqLSTM.characters_to_ngrams(
+                Seq2SeqLSTM.tokenize_text(self.input_texts[prep_text_idx], self.lowercase),
+                self.char_ngram_size, False, False
+            )
+            target_text = Seq2SeqLSTM.characters_to_ngrams(
+                Seq2SeqLSTM.tokenize_text(self.target_texts[prep_text_idx], self.lowercase),
+                self.char_ngram_size, True, True
+            )
+            if self.use_embeddings:
+                for t in range(len(input_text)):
+                    encoder_input_data[idx_in_batch, t] = self.input_token_index[input_text[t]] + 1
+                decoder_input_data[idx_in_batch, 0] = self.target_token_index[target_text[0]] + 1
+                for t in range(len(target_text) - 1):
+                    decoder_input_data[idx_in_batch, t + 1] = self.target_token_index[target_text[t + 1]] + 1
+                    decoder_target_data[idx_in_batch, t, self.target_token_index[target_text[t + 1]]] = 1.0
+                t = len(target_text) - 1
+                decoder_input_data[idx_in_batch, t] = self.target_token_index[target_text[t]] + 1
+                decoder_target_data[idx_in_batch, t - 1, self.target_token_index[target_text[t]]] = 1.0
+            else:
+                for t in range(len(input_text)):
+                    encoder_input_data[idx_in_batch, t, self.input_token_index[input_text[t]]] = 1.0
+                decoder_input_data[idx_in_batch, 0, self.target_token_index[target_text[0]]] = 1.0
+                for t in range(len(target_text) - 1):
+                    decoder_input_data[idx_in_batch, t + 1, self.target_token_index[target_text[t + 1]]] = 1.0
+                    decoder_target_data[idx_in_batch, t, self.target_token_index[target_text[t + 1]]] = 1.0
+                t = len(target_text) - 1
+                decoder_input_data[idx_in_batch, t, self.target_token_index[target_text[t]]] = 1.0
+                decoder_target_data[idx_in_batch, t - 1, self.target_token_index[target_text[t]]] = 1.0
             idx_in_batch += 1
         return [encoder_input_data, decoder_input_data], decoder_target_data

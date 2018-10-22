@@ -31,12 +31,17 @@ class TestSeq2SeqLSTM(unittest.TestCase):
             os.remove(self.model_name)
 
     def test_creation(self):
-        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1, use_conv_layer=True,
-                              n_filters=32, kernel_size=5, grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2,
-                              lowercase=False, verbose=True)
+        seq2seq = Seq2SeqLSTM(batch_size=256, char_ngram_size=2, embedding_size=30, epochs=200, latent_dim=500,
+                              validation_split=0.1, use_conv_layer=True, n_filters=32, kernel_size=5, dropout=0.4,
+                              recurrent_dropout=0.1, grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False,
+                              verbose=True)
         self.assertIsInstance(seq2seq, Seq2SeqLSTM)
         self.assertTrue(hasattr(seq2seq, 'batch_size'))
         self.assertEqual(seq2seq.batch_size, 256)
+        self.assertTrue(hasattr(seq2seq, 'char_ngram_size'))
+        self.assertEqual(seq2seq.char_ngram_size, 2)
+        self.assertTrue(hasattr(seq2seq, 'embedding_size'))
+        self.assertEqual(seq2seq.embedding_size, 30)
         self.assertTrue(hasattr(seq2seq, 'epochs'))
         self.assertEqual(seq2seq.epochs, 200)
         self.assertTrue(hasattr(seq2seq, 'latent_dim'))
@@ -47,6 +52,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertEqual(seq2seq.kernel_size, 5)
         self.assertTrue(hasattr(seq2seq, 'validation_split'))
         self.assertAlmostEqual(seq2seq.validation_split, 0.1)
+        self.assertTrue(hasattr(seq2seq, 'dropout'))
+        self.assertAlmostEqual(seq2seq.dropout, 0.4)
+        self.assertTrue(hasattr(seq2seq, 'recurrent_dropout'))
+        self.assertAlmostEqual(seq2seq.recurrent_dropout, 0.1)
         self.assertTrue(hasattr(seq2seq, 'grad_clipping'))
         self.assertAlmostEqual(seq2seq.grad_clipping, 50.0)
         self.assertTrue(hasattr(seq2seq, 'lr'))
@@ -66,6 +75,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         seq2seq = Seq2SeqLSTM(use_conv_layer=False, verbose=True, lr=1e-2)
         res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
+        self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
+        self.assertIsNone(res.input_embeddings_matrix_)
+        self.assertTrue(hasattr(res, 'output_embeddings_matrix_'))
+        self.assertIsNone(res.output_embeddings_matrix_)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
         self.assertTrue(hasattr(res, 'target_token_index_'))
@@ -85,10 +98,18 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_fit_positive02(self):
         """ The Conv1D layer is used. """
+        char_ngram_size = 2
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(use_conv_layer=True, verbose=True, lr=1e-2)
+        seq2seq = Seq2SeqLSTM(char_ngram_size=char_ngram_size, embedding_size=20, use_conv_layer=True, verbose=True,
+                              lr=1e-2, batch_size=16)
         res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
+        self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
+        self.assertIsInstance(res.input_embeddings_matrix_, np.ndarray)
+        self.assertEqual(res.input_embeddings_matrix_.ndim, 2)
+        self.assertTrue(hasattr(res, 'output_embeddings_matrix_'))
+        self.assertIsInstance(res.output_embeddings_matrix_, np.ndarray)
+        self.assertEqual(res.output_embeddings_matrix_.ndim, 2)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
         self.assertTrue(hasattr(res, 'target_token_index_'))
@@ -105,6 +126,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertIsInstance(res.encoder_model_, Model)
         self.assertTrue(hasattr(res, 'decoder_model_'))
         self.assertIsInstance(res.decoder_model_, Model)
+        for cur in (set(res.input_token_index_.keys()) | set(res.target_token_index_.keys()) -
+                    {(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.END_CHAR,)}):
+            self.assertIsInstance(cur, tuple)
+            self.assertEqual(len(cur), char_ngram_size, msg=cur)
 
     def test_fit_positive03(self):
         """ Input and target texts for training are the 1-D numpy arrays. """
@@ -112,6 +137,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         seq2seq = Seq2SeqLSTM(lr=1e-2)
         res = seq2seq.fit(np.array(input_texts_for_training), np.array(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
+        self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
+        self.assertIsNone(res.input_embeddings_matrix_)
+        self.assertTrue(hasattr(res, 'output_embeddings_matrix_'))
+        self.assertIsNone(res.output_embeddings_matrix_)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
         self.assertTrue(hasattr(res, 'target_token_index_'))
@@ -135,6 +164,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         seq2seq = Seq2SeqLSTM(lr=1e-2)
         res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
         self.assertIsInstance(res, Seq2SeqLSTM)
+        self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
+        self.assertIsNone(res.input_embeddings_matrix_)
+        self.assertTrue(hasattr(res, 'output_embeddings_matrix_'))
+        self.assertIsNone(res.output_embeddings_matrix_)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
         self.assertTrue(hasattr(res, 'target_token_index_'))
@@ -158,6 +191,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2)
         res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
         self.assertIsInstance(res, Seq2SeqLSTM)
+        self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
+        self.assertIsNone(res.input_embeddings_matrix_)
+        self.assertTrue(hasattr(res, 'output_embeddings_matrix_'))
+        self.assertIsNone(res.output_embeddings_matrix_)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
         self.assertTrue(hasattr(res, 'target_token_index_'))
@@ -182,6 +219,10 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         res = seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                           eval_set=(input_texts_for_training[-20:], target_texts_for_training[-20:]))
         self.assertIsInstance(res, Seq2SeqLSTM)
+        self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
+        self.assertIsNone(res.input_embeddings_matrix_)
+        self.assertTrue(hasattr(res, 'output_embeddings_matrix_'))
+        self.assertIsNone(res.output_embeddings_matrix_)
         self.assertTrue(hasattr(res, 'input_token_index_'))
         self.assertIsInstance(res.input_token_index_, dict)
         self.assertTrue(hasattr(res, 'target_token_index_'))
@@ -330,6 +371,23 @@ class TestSeq2SeqLSTM(unittest.TestCase):
                   u'\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
         self.assertGreater(self.estimate(predicted_texts, target_texts), 0.1)
 
+    def test_predict_positive002(self):
+        """ Part of correctly predicted texts must be greater than 0.1. """
+        input_texts, target_texts = self.load_text_pairs(self.data_set_name)
+        seq2seq = Seq2SeqLSTM(char_ngram_size=2, embedding_size=30, validation_split=None, epochs=200, lr=1e-2,
+                              verbose=True, lowercase=True, batch_size=64)
+        predicted_texts = seq2seq.fit_predict(input_texts, target_texts)
+        self.assertIsInstance(predicted_texts, list)
+        self.assertEqual(len(predicted_texts), len(input_texts))
+        indices = list(range(len(predicted_texts)))
+        random.shuffle(indices)
+        print(u'')
+        print(u'Some predicted texts:')
+        for ind in range(min(5, len(predicted_texts))):
+            print(u'    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
+                  u'\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
+        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.1)
+
     def test_predict_negative001(self):
         """ Usage of the seq2seq model for prediction without training. """
         input_texts_for_testing, _ = self.load_text_pairs(self.data_set_name)
@@ -374,8 +432,9 @@ class TestSeq2SeqLSTM(unittest.TestCase):
             Seq2SeqLSTM.check_X(texts, u'X')
 
     def test_serialize_untrained(self):
-        seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1,
-                              grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True)
+        seq2seq = Seq2SeqLSTM(batch_size=256, char_ngram_size=3, epochs=200, latent_dim=500, validation_split=0.1,
+                              dropout=0.7, recurrent_dropout=0.2, grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2,
+                              lowercase=False, verbose=True)
         with open(self.model_name, 'wb') as fp:
             pickle.dump(seq2seq, fp)
         with open(self.model_name, 'rb') as fp:
@@ -383,12 +442,20 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertIsInstance(another_seq2seq, Seq2SeqLSTM)
         self.assertTrue(hasattr(another_seq2seq, 'batch_size'))
         self.assertEqual(another_seq2seq.batch_size, 256)
+        self.assertTrue(hasattr(another_seq2seq, 'char_ngram_size'))
+        self.assertEqual(another_seq2seq.char_ngram_size, 3)
+        self.assertTrue(hasattr(another_seq2seq, 'embedding_size'))
+        self.assertIsNone(another_seq2seq.embedding_size)
         self.assertTrue(hasattr(another_seq2seq, 'epochs'))
         self.assertEqual(another_seq2seq.epochs, 200)
         self.assertTrue(hasattr(another_seq2seq, 'latent_dim'))
         self.assertEqual(another_seq2seq.latent_dim, 500)
         self.assertTrue(hasattr(another_seq2seq, 'validation_split'))
         self.assertAlmostEqual(another_seq2seq.validation_split, 0.1)
+        self.assertTrue(hasattr(another_seq2seq, 'dropout'))
+        self.assertAlmostEqual(another_seq2seq.dropout, 0.7)
+        self.assertTrue(hasattr(another_seq2seq, 'recurrent_dropout'))
+        self.assertAlmostEqual(another_seq2seq.recurrent_dropout, 0.2)
         self.assertTrue(hasattr(another_seq2seq, 'grad_clipping'))
         self.assertAlmostEqual(another_seq2seq.grad_clipping, 50.0)
         self.assertTrue(hasattr(another_seq2seq, 'lr'))
@@ -415,7 +482,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         for ind in indices[-n:]:
             input_texts_for_testing.append(input_texts[ind])
             target_texts_for_testing.append(target_texts[ind])
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=10, lr=1e-3)
+        seq2seq = Seq2SeqLSTM(validation_split=None, embedding_size=5, epochs=10, lr=1e-3)
         seq2seq.fit(input_texts_for_training, target_texts_for_training,
                     eval_set=(input_texts_for_testing, target_texts_for_testing))
         predicted_texts_1 = seq2seq.predict(input_texts_for_testing)
@@ -461,6 +528,13 @@ class TestSeq2SeqLSTM(unittest.TestCase):
                     target_texts.append(TestSeq2SeqLSTM.tokenize_text(new_target_text))
                 cur_line = fp.readline()
                 line_idx += 1
+        n = len(input_texts)
+        if n > 500:
+            indices = [idx for idx in range(n)]
+            random.shuffle(indices)
+            indices = indices[:500]
+            input_texts = [input_texts[idx] for idx in indices]
+            target_texts = [target_texts[idx] for idx in indices]
         return input_texts, target_texts
 
     @staticmethod
@@ -494,7 +568,32 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
 
 class TestTextPairSequence(unittest.TestCase):
-    def test_generate_data_for_training(self):
+    def characters_to_ngrams_1(self):
+        input_text = u'a b c 1 2 d'
+        true_ngrams = [(Seq2SeqLSTM.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'), (u'b', u'c', u'1'), (u'c', u'1', u'2'),
+                       (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqLSTM.END_CHAR)]
+        self.assertEqual(true_ngrams, Seq2SeqLSTM.characters_to_ngrams(input_text.split(), 3, False, False))
+
+    def characters_to_ngrams_2(self):
+        input_text = u'a b c 1 2 d'
+        true_ngrams = [(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'),
+                       (u'b', u'c', u'1'), (u'c', u'1', u'2'), (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqLSTM.END_CHAR)]
+        self.assertEqual(true_ngrams, Seq2SeqLSTM.characters_to_ngrams(input_text.split(), 3, True, False))
+
+    def characters_to_ngrams_3(self):
+        input_text = u'a b c 1 2 d'
+        true_ngrams = [(Seq2SeqLSTM.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'), (u'b', u'c', u'1'), (u'c', u'1', u'2'),
+                       (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqLSTM.END_CHAR), (Seq2SeqLSTM.END_CHAR,)]
+        self.assertEqual(true_ngrams, Seq2SeqLSTM.characters_to_ngrams(input_text.split(), 3, False, True))
+
+    def characters_to_ngrams_4(self):
+        input_text = u'a b c 1 2 d'
+        true_ngrams = [(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'),
+                       (u'b', u'c', u'1'), (u'c', u'1', u'2'), (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqLSTM.END_CHAR),
+                       (Seq2SeqLSTM.END_CHAR,)]
+        self.assertEqual(true_ngrams, Seq2SeqLSTM.characters_to_ngrams(input_text.split(), 3, True, True))
+
+    def test_generate_data_for_training_1(self):
         input_texts = [
             u'a b c',
             u'a c',
@@ -509,11 +608,13 @@ class TestTextPairSequence(unittest.TestCase):
             u'б а',
             u'б 3'
         ]
+        char_ngram_size = 1
         batch_size = 2
         max_encoder_seq_length = 3
         max_decoder_seq_length = 6
-        input_token_index = {u'0': 0, u'1': 1, u'a': 2, u'b': 3, u'c': 4}
-        target_token_index = {u'\t': 0, u'\n': 1, u'2': 2, u'3': 3, u'а': 4, u'б': 5}
+        input_token_index = {(u'0',): 0, (u'1',): 1, (u'a',): 2, (u'b',): 3, (u'c',): 4}
+        target_token_index = {(Seq2SeqLSTM.START_CHAR,): 0, (Seq2SeqLSTM.END_CHAR,): 1, (u'2',): 2, (u'3',): 3,
+                              (u'а',): 4, (u'б',): 5}
         true_batches = [
             (
                 [
@@ -673,14 +774,16 @@ class TestTextPairSequence(unittest.TestCase):
             )
         ]
         training_set_generator = TextPairSequence(
-            input_texts=input_texts, target_texts=target_texts, batch_size=batch_size,
+            input_texts=input_texts, target_texts=target_texts, batch_size=batch_size, char_ngram_size=char_ngram_size,
             max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
-            input_token_index=input_token_index, target_token_index=target_token_index, lowercase=False
+            input_token_index=input_token_index, target_token_index=target_token_index, lowercase=False,
+            use_embeddings=False
         )
         self.assertIsInstance(training_set_generator, TextPairSequence)
         self.assertTrue(hasattr(training_set_generator, 'input_texts'))
         self.assertTrue(hasattr(training_set_generator, 'target_texts'))
         self.assertTrue(hasattr(training_set_generator, 'batch_size'))
+        self.assertTrue(hasattr(training_set_generator, 'char_ngram_size'))
         self.assertTrue(hasattr(training_set_generator, 'max_encoder_seq_length'))
         self.assertTrue(hasattr(training_set_generator, 'max_decoder_seq_length'))
         self.assertTrue(hasattr(training_set_generator, 'input_token_index'))
@@ -691,6 +794,168 @@ class TestTextPairSequence(unittest.TestCase):
         self.assertIs(training_set_generator.input_texts, input_texts)
         self.assertIs(training_set_generator.target_texts, target_texts)
         self.assertEqual(training_set_generator.batch_size, batch_size)
+        self.assertEqual(training_set_generator.char_ngram_size, char_ngram_size)
+        self.assertEqual(training_set_generator.max_encoder_seq_length, max_encoder_seq_length)
+        self.assertEqual(training_set_generator.max_decoder_seq_length, max_decoder_seq_length)
+        self.assertIs(training_set_generator.input_token_index, input_token_index)
+        self.assertIs(training_set_generator.target_token_index, target_token_index)
+        self.assertFalse(training_set_generator.lowercase)
+        self.assertIsInstance(training_set_generator.n_text_pairs, int)
+        self.assertEqual(training_set_generator.n_text_pairs, len(input_texts))
+        self.assertIsInstance(training_set_generator.n_batches, int)
+        self.assertEqual(training_set_generator.n_batches, len(true_batches))
+        for batch_ind in range(len(true_batches)):
+            predicted_batch = training_set_generator[batch_ind]
+            self.assertIsInstance(predicted_batch, tuple, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertEqual(len(predicted_batch), 2, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[0], list, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[1], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertEqual(len(predicted_batch[0]), 2, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[0][0], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[0][1], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batch[0][0], true_batches[batch_ind][0][0]),
+                            msg=u'batch_ind={0}, encoder_input_data'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batch[0][1], true_batches[batch_ind][0][1]),
+                            msg=u'batch_ind={0}, decoder_input_data'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batch[1], true_batches[batch_ind][1]),
+                            msg=u'batch_ind={0}, decoder_target_data'.format(batch_ind))
+
+    def test_generate_data_for_training_2(self):
+        input_texts = [
+            u'a b c',
+            u'a c',
+            u'0 1 b',
+            u'b a',
+            u'b c'
+        ]
+        target_texts = [
+            u'а б а 2',
+            u'2 3',
+            u'а б а',
+            u'б а',
+            u'б 3'
+        ]
+        char_ngram_size = 1
+        batch_size = 2
+        max_encoder_seq_length = 3
+        max_decoder_seq_length = 6
+        input_token_index = {(u'0',): 0, (u'1',): 1, (u'a',): 2, (u'b',): 3, (u'c',): 4}
+        target_token_index = {(Seq2SeqLSTM.START_CHAR,): 0, (Seq2SeqLSTM.END_CHAR,): 1, (u'2',): 2, (u'3',): 3,
+                              (u'а',): 4, (u'б',): 5}
+        true_batches = [
+            (
+                [
+                    np.array([
+                        [3, 4, 5],
+                        [3, 5, 0]
+                    ]),
+                    np.array([
+                        [1, 5, 6, 5, 3, 2],
+                        [1, 3, 4, 2, 0, 0]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            ),
+            (
+                [
+                    np.array([
+                        [1, 2, 4],
+                        [4, 3, 0]
+                    ]),
+                    np.array([
+                        [1, 5, 6, 5, 2, 0],
+                        [1, 6, 5, 2, 0, 0]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            ),
+            (
+                [
+                    np.array([
+                        [4, 5, 0],
+                        [3, 4, 5]
+                    ]),
+                    np.array([
+                        [1, 6, 4, 2, 0, 0],
+                        [1, 5, 6, 5, 3, 2]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            )
+        ]
+        training_set_generator = TextPairSequence(
+            input_texts=input_texts, target_texts=target_texts, batch_size=batch_size, char_ngram_size=char_ngram_size,
+            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
+            input_token_index=input_token_index, target_token_index=target_token_index, lowercase=False,
+            use_embeddings=True
+        )
+        self.assertIsInstance(training_set_generator, TextPairSequence)
+        self.assertTrue(hasattr(training_set_generator, 'input_texts'))
+        self.assertTrue(hasattr(training_set_generator, 'target_texts'))
+        self.assertTrue(hasattr(training_set_generator, 'batch_size'))
+        self.assertTrue(hasattr(training_set_generator, 'char_ngram_size'))
+        self.assertTrue(hasattr(training_set_generator, 'max_encoder_seq_length'))
+        self.assertTrue(hasattr(training_set_generator, 'max_decoder_seq_length'))
+        self.assertTrue(hasattr(training_set_generator, 'input_token_index'))
+        self.assertTrue(hasattr(training_set_generator, 'target_token_index'))
+        self.assertTrue(hasattr(training_set_generator, 'lowercase'))
+        self.assertTrue(hasattr(training_set_generator, 'n_text_pairs'))
+        self.assertTrue(hasattr(training_set_generator, 'n_batches'))
+        self.assertIs(training_set_generator.input_texts, input_texts)
+        self.assertIs(training_set_generator.target_texts, target_texts)
+        self.assertEqual(training_set_generator.batch_size, batch_size)
+        self.assertEqual(training_set_generator.char_ngram_size, char_ngram_size)
         self.assertEqual(training_set_generator.max_encoder_seq_length, max_encoder_seq_length)
         self.assertEqual(training_set_generator.max_decoder_seq_length, max_decoder_seq_length)
         self.assertIs(training_set_generator.input_token_index, input_token_index)
