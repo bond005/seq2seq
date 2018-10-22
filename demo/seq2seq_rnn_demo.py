@@ -12,10 +12,10 @@ import random
 import numpy as np
 
 try:
-    from seq2seq_lstm import Seq2SeqLSTM
+    from seq2seq_rnn import Seq2SeqRNN
 except:
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-    from seq2seq_lstm import Seq2SeqLSTM
+    from seq2seq_rnn import Seq2SeqRNN
 
 
 def load_text_pairs(file_name):
@@ -235,15 +235,15 @@ def main():
     if (model_name is not None) and os.path.isfile(model_name):
         with open(model_name, 'rb') as fp:
             seq2seq = pickle.load(fp)
-        assert isinstance(seq2seq, Seq2SeqLSTM), \
+        assert isinstance(seq2seq, Seq2SeqRNN), \
             u'A sequence-to-sequence neural model cannot be loaded from file "{0}".'.format(model_name)
         print(u'')
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
-        seq2seq = Seq2SeqLSTM(latent_dim=512, validation_split=0.1, epochs=200, lr=1e-3, dropout=0.7,
-                              verbose=verbose_mode, lowercase=True, batch_size=batch_size,
-                              use_conv_layer=args.use_conv1d, kernel_size=5, n_filters=256,
-                              embedding_size=embedding_size, char_ngram_size=char_ngram_size)
+        seq2seq = Seq2SeqRNN(latent_dim=512, validation_split=0.1, epochs=200, lr=1e-3, dropout=0.7,
+                             verbose=verbose_mode, lowercase=True, batch_size=batch_size,
+                             use_conv_layer=args.use_conv1d, kernel_size=5, n_filters=256,
+                             embedding_size=embedding_size, char_ngram_size=char_ngram_size)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print(u'')
         print(u'Training has been successfully finished.')

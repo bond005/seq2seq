@@ -2,14 +2,14 @@
 
 from setuptools import setup, find_packages
 
-import seq2seq_lstm
+import seq2seq_rnn
 
 
 long_description = '''
-seq2seq-lstm
+seq2seq-rnn
 ============
 
-The Seq2Seq-LSTM is a sequence-to-sequence classifier with the
+The Seq2Seq-RNN is a sequence-to-sequence classifier with the
 sklearn-like interface, and it uses the Keras package for neural
 modeling.
 
@@ -47,39 +47,39 @@ But I recommend you to use pip and install this package from PyPi:
 
 .. code::
 
-    pip install seq2seq-lstm
+    pip install seq2seq_rnn
 
 or (using ``sudo``):
 
 .. code::
 
-    sudo pip install seq2seq-lstm
+    sudo pip install seq2seq_rnn
 
 Usage
 ~~~~~
 
-After installing the Seq2Seq-LSTM can be used as Python package in your
+After installing the Seq2Seq-RNN can be used as Python package in your
 projects. For example:
 
 .. code::
 
-    from seq2seq import Seq2SeqLSTM  # import the Seq2Seq-LSTM package
-    seq2seq = Seq2SeqLSTM()  # create new sequence-to-sequence transformer
+    from seq2seq import Seq2SeqRNN  # import the Seq2Seq-RNN package
+    seq2seq = Seq2SeqRNN()  # create new sequence-to-sequence transformer
 
-To see the work of the Seq2Seq-LSTM on a large dataset, you can run a
+To see the work of the Seq2Seq-RNN on a large dataset, you can run a
 demo
 
 .. code::
  
-    python demo/seq2seq_lstm_demo.py
+    python demo/seq2seq_rnn_demo.py
 
 or (with saving model after its training):
 
 .. code::
  
-    python demo/seq2seq_lstm_demo.py some_file.pkl
+    python demo/seq2seq_rnn_demo.py some_file.pkl
 
-In this demo, the Seq2Seq-LSTM learns to translate the sentences from
+In this demo, the Seq2Seq-RNN learns to translate the sentences from
 English into Russian. If you specify the neural model file (for example,
 aforementioned ``some_file.pkl``), then the learned neural model will be
 saved into this file for its loading instead of re-fitting at the next
@@ -92,11 +92,11 @@ used as data for unit tests and demo script (see
 '''
 
 setup(
-    name='seq2seq-lstm',
-    version=seq2seq_lstm.__version__,
+    name='seq2seq-rnn',
+    version=seq2seq_rnn.__version__,
     packages=find_packages(exclude=['tests', 'demo']),
     include_package_data=True,
-    description='Sequence-to-sequence classifier based on LSTM with the simple sklearn-like interface',
+    description='Sequence-to-sequence classifier based on RNN with the simple sklearn-like interface',
     long_description=long_description,
     url='https://github.com/bond005/seq2seq',
     author='Ivan Bondarenko',
@@ -118,7 +118,7 @@ setup(
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
     ],
-    keywords=['seq2seq', 'sequence-to-sequence', 'lstm', 'nlp', 'keras', 'scikit-learn'],
+    keywords=['seq2seq', 'sequence-to-sequence', 'rnn', 'nlp', 'keras', 'scikit-learn'],
     install_requires=['gensim>=2.3.0', 'h5py>=2.8.0', 'keras>=2.2.0', 'numpy>=1.14.5', 'scikit-learn>=0.19.1'],
     test_suite='tests'
 )

@@ -26,7 +26,7 @@ from gensim.models import Word2Vec
 import keras.backend as K
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from keras.models import Model
-from keras.layers import Input, LSTM, Dense, Conv1D, Masking, Embedding
+from keras.layers import Input, GRU, Dense, Conv1D, Masking, Embedding
 from keras.optimizers import RMSprop
 from keras.utils import Sequence
 import numpy as np
@@ -34,7 +34,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
 
 
-class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
+class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
     START_CHAR = u'<BOS>'
     END_CHAR = u'<EOS>'
@@ -46,20 +46,20 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         :param batch_size: maximal number of texts or text pairs in the single mini-batch (positive integer).
         :param epochs: maximal number of training epochs (positive integer).
-        :param use_conv_layer: use of the 1D convolution layer before LSTM in the encoder.
+        :param use_conv_layer: use of the 1D convolution layer before RNN in the encoder.
         :param embedding_size: size of the character N-gram embedding (if None, then embeddings are not calculated).
         :param char_ngram_size: length of the character N-gram.
         :param kernel_size: size of the convolution kernel if the convolution layer is used.
         :param n_filters: number of output filters in the convolution if the convolution layer is used.
-        :param latent_dim: number of units in the LSTM layer (positive integer).
+        :param latent_dim: number of units in the RNN layer (positive integer).
         :param validation_split: the ratio of the evaluation set size to the total number of samples (float between 0
         and 1).
         :param grad_clipping: maximally permissible gradient norm (positive float).
         :param lr: learning rate (positive float)
         :param rho: parameter of the RMSprop algorithm (non-negative float).
         :param epsilon: fuzzy factor.
-        :param dropout: dropout factor for the LSTM layer.
-        :param recurrent_dropout: recurrent dropout factor for the LSTM layer.
+        :param dropout: dropout factor for the RNN layer.
+        :param recurrent_dropout: recurrent dropout factor for the RNN layer.
         :param lowercase: need to bring all tokens of all texts to the lowercase.
         :param verbose: need to printing a training log.
 
@@ -253,20 +253,19 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 input_dim=self.input_embeddings_matrix_.shape[0], output_dim=self.input_embeddings_matrix_.shape[1],
                 weights=[self.input_embeddings_matrix_], trainable=False, mask_zero=False
             )(encoder_inputs)
-        encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True, recurrent_activation='hard_sigmoid',
-                       activation='tanh', dropout=self.dropout, recurrent_dropout=self.recurrent_dropout)
+        encoder = GRU(self.latent_dim, return_sequences=False, return_state=True, recurrent_activation='hard_sigmoid',
+                      activation='tanh', dropout=self.dropout, recurrent_dropout=self.recurrent_dropout)
         if self.use_conv_layer:
-            encoder_outputs, state_h, state_c = encoder(
+            encoder_outputs, encoder_states = encoder(
                 Masking(mask_value=0.0)(
                     Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='valid', activation='relu',
                            use_bias=False)(encoder_inputs if encoder_embeddings is None else encoder_embeddings)
                 )
             )
         else:
-            encoder_outputs, state_h, state_c = encoder(Masking(mask_value=0.0)(
+            encoder_outputs, encoder_states = encoder(Masking(mask_value=0.0)(
                 encoder_inputs if encoder_embeddings is None else encoder_embeddings)
             )
-        encoder_states = [state_h, state_c]
         if self.output_embeddings_matrix_ is None:
             decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
             decoder_embeddings = None
@@ -276,10 +275,10 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 input_dim=self.output_embeddings_matrix_.shape[0], output_dim=self.output_embeddings_matrix_.shape[1],
                 weights=[self.output_embeddings_matrix_], trainable=False, mask_zero=False
             )(decoder_inputs)
-        decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True, activation='tanh',
-                            recurrent_activation='hard_sigmoid', dropout=self.dropout,
-                            recurrent_dropout=self.recurrent_dropout)
-        decoder_outputs, _, _ = decoder_lstm(
+        decoder_rnn = GRU(self.latent_dim, return_sequences=True, return_state=True, activation='tanh',
+                          recurrent_activation='hard_sigmoid', dropout=self.dropout,
+                          recurrent_dropout=self.recurrent_dropout)
+        decoder_outputs, _ = decoder_rnn(
             Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
             initial_state=encoder_states
         )
@@ -333,18 +332,13 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             if os.path.isfile(tmp_weights_name):
                 os.remove(tmp_weights_name)
         self.encoder_model_ = Model(encoder_inputs, encoder_states)
-        decoder_state_input_h = Input(shape=(self.latent_dim,))
-        decoder_state_input_c = Input(shape=(self.latent_dim,))
-        decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-        decoder_outputs, state_h, state_c = decoder_lstm(
+        decoder_states_inputs = Input(shape=(self.latent_dim,))
+        decoder_outputs, decoder_states = decoder_rnn(
             Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
             initial_state=decoder_states_inputs
         )
-        decoder_states = [state_h, state_c]
         decoder_outputs = decoder_dense(decoder_outputs)
-        self.decoder_model_ = Model(
-            [decoder_inputs] + decoder_states_inputs,
-            [decoder_outputs] + decoder_states)
+        self.decoder_model_ = Model([decoder_inputs, decoder_states_inputs], [decoder_outputs, decoder_states])
         self.reverse_target_char_index_ = dict((i, char) for char, i in self.target_token_index_.items())
         return self
 
@@ -364,7 +358,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                                'input_embeddings_matrix_', 'output_embeddings_matrix_'])
         texts = list()
         use_embeddings = (self.embedding_size is not None)
-        for input_seq in Seq2SeqLSTM.generate_data_for_prediction(
+        for input_seq in Seq2SeqRNN.generate_data_for_prediction(
                 input_texts=X, batch_size=self.batch_size, char_ngram_size=self.char_ngram_size,
                 max_encoder_seq_length=self.max_encoder_seq_length_, input_token_index=self.input_token_index_,
                 lowercase=self.lowercase, use_embeddings=use_embeddings
@@ -385,7 +379,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 stop_conditions.append(False)
                 decoded_sentences.append([])
             while not all(stop_conditions):
-                output_tokens, h, c = self.decoder_model_.predict([target_seq] + states_value)
+                output_tokens, states_value = self.decoder_model_.predict([target_seq, states_value])
                 indices_of_sampled_tokens = np.argmax(output_tokens[:, -1, :], axis=1)
                 for text_idx in range(batch_size):
                     if stop_conditions[text_idx]:
@@ -403,7 +397,6 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                         for token_idx in range(len(self.target_token_index_)):
                             target_seq[text_idx][0][token_idx] = 0.0
                         target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
-                states_value = [h, c]
             for text_idx in range(batch_size):
                 texts.append(u' '.join([val[self.char_ngram_size // 2] for val in decoded_sentences[text_idx]]))
             del input_seq
@@ -444,21 +437,20 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     input_dim=self.input_embeddings_matrix_.shape[0], output_dim=self.input_embeddings_matrix_.shape[1],
                     weights=[self.input_embeddings_matrix_], trainable=False, mask_zero=False
                 )(encoder_inputs)
-            encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True, activation='tanh',
-                           recurrent_activation='hard_sigmoid', dropout=self.dropout,
-                           recurrent_dropout=self.recurrent_dropout)
+            encoder = GRU(self.latent_dim, return_sequences=False, return_state=True, activation='tanh',
+                          recurrent_activation='hard_sigmoid', dropout=self.dropout,
+                          recurrent_dropout=self.recurrent_dropout)
             if self.use_conv_layer:
-                encoder_outputs, state_h, state_c = encoder(
+                encoder_outputs, encoder_states = encoder(
                     Masking(mask_value=0.0)(
                         Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='valid', activation='relu',
                                use_bias=False)(encoder_inputs if encoder_embeddings is None else encoder_embeddings)
                     )
                 )
             else:
-                encoder_outputs, state_h, state_c = encoder(
+                encoder_outputs, encoder_states = encoder(
                     Masking(mask_value=0.0)(encoder_inputs if encoder_embeddings is None else encoder_embeddings)
                 )
-            encoder_states = [state_h, state_c]
             if self.output_embeddings_matrix_ is None:
                 decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
                 decoder_embeddings = None
@@ -469,23 +461,18 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                     output_dim=self.output_embeddings_matrix_.shape[1],
                     weights=[self.output_embeddings_matrix_], trainable=False, mask_zero=False
                 )(decoder_inputs)
-            decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True, activation='tanh',
-                                recurrent_activation='hard_sigmoid', dropout=self.dropout,
-                                recurrent_dropout=self.recurrent_dropout)
+            decoder_rnn = GRU(self.latent_dim, return_sequences=True, return_state=True, activation='tanh',
+                              recurrent_activation='hard_sigmoid', dropout=self.dropout,
+                              recurrent_dropout=self.recurrent_dropout)
             decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
             self.encoder_model_ = Model(encoder_inputs, encoder_states)
-            decoder_state_input_h = Input(shape=(self.latent_dim,))
-            decoder_state_input_c = Input(shape=(self.latent_dim,))
-            decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
-            decoder_outputs, state_h, state_c = decoder_lstm(
+            decoder_states_inputs = Input(shape=(self.latent_dim,))
+            decoder_outputs, decoder_states = decoder_rnn(
                 Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
                 initial_state=decoder_states_inputs
             )
-            decoder_states = [state_h, state_c]
             decoder_outputs = decoder_dense(decoder_outputs)
-            self.decoder_model_ = Model(
-                [decoder_inputs] + decoder_states_inputs,
-                [decoder_outputs] + decoder_states)
+            self.decoder_model_ = Model([decoder_inputs, decoder_states_inputs], [decoder_outputs, decoder_states])
             with open(tmp_weights_name, 'wb') as fp:
                 fp.write(weights_as_bytes[0])
             self.encoder_model_.load_weights(tmp_weights_name)
@@ -528,7 +515,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     def get_params(self, deep=True):
         """ Get parameters for this estimator.
 
-        This method is necessary for using the `Seq2SeqLSTM` object in such scikit-learn classes as `Pipeline` etc.
+        This method is necessary for using the `Seq2SeqRNN` object in such scikit-learn classes as `Pipeline` etc.
 
         :param deep: If True, will return the parameters for this estimator and contained subobjects that are estimators
 
@@ -545,7 +532,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     def set_params(self, **params):
         """ Set parameters for this estimator.
 
-        This method is necessary for using the `Seq2SeqLSTM` object in such scikit-learn classes as `Pipeline` etc.
+        This method is necessary for using the `Seq2SeqRNN` object in such scikit-learn classes as `Pipeline` etc.
 
         :param params: dictionary with new values of parameters for the seq2seq estimator.
 
@@ -896,14 +883,14 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 end_idx = start_idx + char_ngram_size
                 char_ngram = characters[max(0, start_idx):min(end_idx, T)]
                 if start_idx < 0:
-                    char_ngram = [Seq2SeqLSTM.START_CHAR] * (-start_idx) + char_ngram
+                    char_ngram = [Seq2SeqRNN.START_CHAR] * (-start_idx) + char_ngram
                 if end_idx > T:
-                    char_ngram += [Seq2SeqLSTM.END_CHAR] * (end_idx - T)
+                    char_ngram += [Seq2SeqRNN.END_CHAR] * (end_idx - T)
                 res.append(tuple(char_ngram))
         if with_starting_char:
-            res = [(Seq2SeqLSTM.START_CHAR,)] + res
+            res = [(Seq2SeqRNN.START_CHAR,)] + res
         if with_ending_char:
-            res.append((Seq2SeqLSTM.END_CHAR,))
+            res.append((Seq2SeqRNN.END_CHAR,))
         return res
 
 
@@ -943,11 +930,11 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
                                               dtype=np.float32)
             for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-                tokenized_text = Seq2SeqLSTM.tokenize_text(input_text, lowercase)
+                tokenized_text = Seq2SeqRNN.tokenize_text(input_text, lowercase)
                 T = len(tokenized_text)
                 if T <= 0:
                     continue
-                tokenized_ngrams = Seq2SeqLSTM.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
+                tokenized_ngrams = Seq2SeqRNN.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
                 if use_embeddings:
                     for t in range(T):
                         if t >= max_encoder_seq_length:
@@ -967,11 +954,11 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
                                           dtype=np.float32)
         for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-            tokenized_text = Seq2SeqLSTM.tokenize_text(input_text, lowercase)
+            tokenized_text = Seq2SeqRNN.tokenize_text(input_text, lowercase)
             T = len(tokenized_text) - char_ngram_size + 1
             if T <= 0:
                 continue
-            tokenized_ngrams = Seq2SeqLSTM.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
+            tokenized_ngrams = Seq2SeqRNN.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
             if use_embeddings:
                 for t in range(T):
                     if t >= max_encoder_seq_length:
@@ -1001,27 +988,27 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         vocabulary_ = set()
         tokenized = []
         for cur_text in texts:
-            prep_text = Seq2SeqLSTM.tokenize_text(cur_text, lowercase)
+            prep_text = Seq2SeqRNN.tokenize_text(cur_text, lowercase)
             if len(prep_text) > 0:
-                prep_text = Seq2SeqLSTM.characters_to_ngrams(prep_text, char_ngram_size, False, False)
+                prep_text = Seq2SeqRNN.characters_to_ngrams(prep_text, char_ngram_size, False, False)
                 vocabulary_ |= set(prep_text)
                 tokenized.append(
                     list(map(
                         lambda it2: u'_'.join(it2),
-                        filter(lambda it1: it1 not in {(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.END_CHAR,)}, prep_text)
+                        filter(lambda it1: it1 not in {(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.END_CHAR,)}, prep_text)
                     ))
                 )
-        if (vocabulary_ - {(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.END_CHAR,)}) != \
-                (set(vocabulary.keys()) - {(Seq2SeqLSTM.START_CHAR,), (Seq2SeqLSTM.END_CHAR,)}):
+        if (vocabulary_ - {(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.END_CHAR,)}) != \
+                (set(vocabulary.keys()) - {(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.END_CHAR,)}):
             raise ValueError(u'Texts contain words not out of vocabulary!')
         if with_starting_char:
-            starting_char_idx = vocabulary.get((Seq2SeqLSTM.START_CHAR,), -1)
+            starting_char_idx = vocabulary.get((Seq2SeqRNN.START_CHAR,), -1)
             if starting_char_idx < 0:
                 raise ValueError('')
         else:
             starting_char_idx = -1
         if with_ending_char:
-            ending_char_idx = vocabulary.get((Seq2SeqLSTM.END_CHAR,), -1)
+            ending_char_idx = vocabulary.get((Seq2SeqRNN.END_CHAR,), -1)
             if ending_char_idx < 0:
                 raise ValueError('')
         else:
@@ -1139,12 +1126,12 @@ class TextPairSequence(Sequence):
             prep_text_idx = src_text_idx
             while prep_text_idx >= self.n_text_pairs:
                 prep_text_idx = prep_text_idx - self.n_text_pairs
-            input_text = Seq2SeqLSTM.characters_to_ngrams(
-                Seq2SeqLSTM.tokenize_text(self.input_texts[prep_text_idx], self.lowercase),
+            input_text = Seq2SeqRNN.characters_to_ngrams(
+                Seq2SeqRNN.tokenize_text(self.input_texts[prep_text_idx], self.lowercase),
                 self.char_ngram_size, False, False
             )
-            target_text = Seq2SeqLSTM.characters_to_ngrams(
-                Seq2SeqLSTM.tokenize_text(self.target_texts[prep_text_idx], self.lowercase),
+            target_text = Seq2SeqRNN.characters_to_ngrams(
+                Seq2SeqRNN.tokenize_text(self.target_texts[prep_text_idx], self.lowercase),
                 self.char_ngram_size, True, True
             )
             if self.use_embeddings:
