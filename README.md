@@ -1,6 +1,6 @@
-# seq2seq-lstm
+# seq2seq-rnn
 
-The Seq2Seq-LSTM is a sequence-to-sequence classifier with the sklearn-like interface, and it uses the Keras package for neural modeling.
+The Seq2Seq-RNN is a sequence-to-sequence classifier with the sklearn-like interface, and it uses the Keras package for neural modeling.
 
 Developing of this module was inspired by this tutorial:
 
@@ -30,37 +30,37 @@ python setup.py test
 But I recommend you to use pip and install this package from PyPi:
 
 ```
-pip install seq2seq-lstm
+pip install seq2seq-rnn
 ```
 
 or
 
 ```
-sudo pip install seq2seq-lstm
+sudo pip install seq2seq-rnn
 ```
 
 ### Usage
 
-After installing the Seq2Seq-LSTM can be used as Python package in your projects. For example:
+After installing the Seq2Seq-RNN can be used as Python package in your projects. For example:
 
 ```
-from seq2seq import Seq2SeqLSTM  # import the Seq2Seq-LSTM package
-seq2seq = Seq2SeqLSTM()  # create new sequence-to-sequence transformer
+from seq2seq import Seq2SeqRNN  # import the Seq2Seq-RNN package
+seq2seq = RNN()  # create new sequence-to-sequence transformer
 ```
 
-To see the work of the Seq2Seq-LSTM on a large dataset, you can run a demo
+To see the work of the Seq2Seq-RNN on a large dataset, you can run a demo
 
 ```
-python demo/seq2seq_lstm_demo.py
+python demo/seq2seq_rnn_demo.py
 ```
 
 or
 
 ```
-python demo/seq2seq_lstm_demo.py -m some_file.pkl
+python demo/seq2seq_rnn_demo.py -m some_file.pkl
 ```
 
-In this demo, the Seq2Seq-LSTM learns to translate the sentences from English into Russian. If you specify the neural model file (for example, aforementioned `some_file.pkl`), then the learned neural model will be saved into this file for its loading instead of re-fitting at the next running.
+In this demo, the Seq2Seq-RNN learns to translate the sentences from English into Russian. If you specify the neural model file (for example, aforementioned `some_file.pkl`), then the learned neural model will be saved into this file for its loading instead of re-fitting at the next running.
 
 The Russian-English sentence pairs from the Tatoeba Project have been used as data for unit tests and demo script (see http://www.manythings.org/anki/).
 
