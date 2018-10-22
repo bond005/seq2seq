@@ -1,4 +1,4 @@
 h5py
-keras
+keras>=2.0.6
 numpy
 scikit-learn
