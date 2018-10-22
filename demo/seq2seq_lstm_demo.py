@@ -99,7 +99,7 @@ def detokenize_text(src):
             new_text += u' '
         else:
             new_text += cur_token
-    return new_text.strip()
+    return new_text.lower().strip()
 
 def estimate(predicted_texts, true_texts):
     """
@@ -241,7 +241,7 @@ def main():
         print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
     else:
         seq2seq = Seq2SeqLSTM(latent_dim=1024, validation_split=0.1, epochs=200, lr=1e-3, dropout=0.7,
-                              verbose=verbose_mode, lowercase=False, batch_size=batch_size,
+                              verbose=verbose_mode, lowercase=True, batch_size=batch_size,
                               use_conv_layer=args.use_conv1d, kernel_size=5, n_filters=512,
                               embedding_size=embedding_size, char_ngram_size=char_ngram_size)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)

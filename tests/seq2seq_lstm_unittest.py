@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import codecs
+from difflib import SequenceMatcher
 import os
 import pickle
 import random
@@ -72,7 +73,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
     def test_fit_positive01(self):
         """ Input and target texts for training are the Python tuples. The Conv1D layer is not used. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(use_conv_layer=False, verbose=True, lr=1e-2)
+        seq2seq = Seq2SeqLSTM(use_conv_layer=False, verbose=True, lr=1e-2, epochs=10)
         res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
@@ -101,7 +102,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         char_ngram_size = 2
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(char_ngram_size=char_ngram_size, embedding_size=20, use_conv_layer=True, verbose=True,
-                              lr=1e-2, batch_size=16)
+                              lr=1e-2, batch_size=16, epochs=10)
         res = seq2seq.fit(tuple(input_texts_for_training), tuple(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
@@ -134,7 +135,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
     def test_fit_positive03(self):
         """ Input and target texts for training are the 1-D numpy arrays. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(lr=1e-2)
+        seq2seq = Seq2SeqLSTM(lr=1e-2, epochs=10)
         res = seq2seq.fit(np.array(input_texts_for_training), np.array(target_texts_for_training))
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
@@ -161,7 +162,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
     def test_fit_positive04(self):
         """ Input and target texts for training are the Python lists. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(lr=1e-2)
+        seq2seq = Seq2SeqLSTM(lr=1e-2, epochs=10)
         res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
@@ -188,7 +189,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
     def test_fit_positive05(self):
         """ Early stopping is not used in the training process. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2)
+        seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2, epochs=10)
         res = seq2seq.fit(input_texts_for_training, target_texts_for_training)
         self.assertIsInstance(res, Seq2SeqLSTM)
         self.assertTrue(hasattr(res, 'input_embeddings_matrix_'))
@@ -215,7 +216,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
     def test_fit_positive06(self):
         """ Prepared evaluation set is used in the early stopping criterion. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2)
+        seq2seq = Seq2SeqLSTM(validation_split=None, lr=1e-2, epochs=10)
         res = seq2seq.fit(input_texts_for_training[:-20], target_texts_for_training[:-20],
                           eval_set=(input_texts_for_training[-20:], target_texts_for_training[-20:]))
         self.assertIsInstance(res, Seq2SeqLSTM)
@@ -356,49 +357,35 @@ class TestSeq2SeqLSTM(unittest.TestCase):
                         eval_set=(input_texts_for_training[-20:], target_texts_for_training[-19:]))
 
     def test_predict_positive001(self):
-        """ Part of correctly predicted texts must be greater than 0.1. """
+        """ Part of correctly predicted texts must be greater than 0.5. """
         input_texts, target_texts = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=200, lr=1e-2, verbose=True, lowercase=False)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=100, lr=1e-2, verbose=True, lowercase=False)
         predicted_texts = seq2seq.fit_predict(input_texts, target_texts)
         self.assertIsInstance(predicted_texts, list)
         self.assertEqual(len(predicted_texts), len(input_texts))
-        indices = list(range(len(predicted_texts)))
-        random.shuffle(indices)
-        print(u'')
-        print(u'Some predicted texts:')
-        for ind in range(min(5, len(predicted_texts))):
-            print(u'    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
-                  u'\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
-        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.1)
+        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.5)
 
     def test_predict_positive002(self):
-        """ Part of correctly predicted texts must be greater than 0.1. """
+        """ Part of correctly predicted texts must be greater than 0.5. """
         input_texts, target_texts = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(char_ngram_size=2, embedding_size=30, validation_split=None, epochs=200, lr=1e-2,
+        seq2seq = Seq2SeqLSTM(char_ngram_size=2, embedding_size=30, validation_split=None, epochs=50, lr=1e-2,
                               verbose=True, lowercase=True, batch_size=64)
         predicted_texts = seq2seq.fit_predict(input_texts, target_texts)
         self.assertIsInstance(predicted_texts, list)
         self.assertEqual(len(predicted_texts), len(input_texts))
-        indices = list(range(len(predicted_texts)))
-        random.shuffle(indices)
-        print(u'')
-        print(u'Some predicted texts:')
-        for ind in range(min(5, len(predicted_texts))):
-            print(u'    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
-                  u'\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
-        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.1)
+        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.5)
 
     def test_predict_negative001(self):
         """ Usage of the seq2seq model for prediction without training. """
         input_texts_for_testing, _ = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=20)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=5)
         with self.assertRaises(NotFittedError):
             _ = seq2seq.predict(input_texts_for_testing)
 
     def test_predict_negative002(self):
         """ Input texts for prediction are wrong. """
         input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.data_set_name)
-        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=20)
+        seq2seq = Seq2SeqLSTM(validation_split=None, epochs=5)
         seq2seq.fit(input_texts_for_testing, target_texts_for_testing)
         true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X'))
         try:
@@ -557,14 +544,13 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     @staticmethod
     def estimate(predicted_texts, true_texts):
-        n_corr = 0
         n_total = len(predicted_texts)
+        similarity = 0.0
         for i in range(n_total):
             cur_predicted = TestSeq2SeqLSTM.detokenize_text(predicted_texts[i]).lower()
             cur_true = TestSeq2SeqLSTM.detokenize_text(true_texts[i]).lower()
-            if cur_predicted == cur_true:
-                n_corr += 1
-        return n_corr / float(n_total)
+            similarity += SequenceMatcher(a=cur_predicted, b=cur_true).ratio()
+        return similarity / float(n_total)
 
 
 class TestTextPairSequence(unittest.TestCase):
