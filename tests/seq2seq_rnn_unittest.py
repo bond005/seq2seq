@@ -555,29 +555,36 @@ class TestSeq2SeqRNN(unittest.TestCase):
 
 
 class TestTextPairSequence(unittest.TestCase):
-    def characters_to_ngrams_1(self):
+    def test_characters_to_ngrams_1(self):
         input_text = u'a b c 1 2 d'
-        true_ngrams = [(Seq2SeqRNN.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'), (u'b', u'c', u'1'), (u'c', u'1', u'2'),
-                       (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqRNN.END_CHAR)]
-        self.assertEqual(true_ngrams, Seq2SeqRNN.characters_to_ngrams(input_text.split(), 3, False, False))
+        true_ngrams = [(Seq2SeqRNN.START_CHAR, u'a', u'b'), (u'c', u'1', u'2'),
+                       (u'd', Seq2SeqRNN.END_CHAR, Seq2SeqRNN.END_CHAR)]
+        self.assertEqual(true_ngrams, Seq2SeqRNN.characters_to_ngrams(input_text.split(), 3, False, False, -1))
 
-    def characters_to_ngrams_2(self):
+    def test_characters_to_ngrams_2(self):
         input_text = u'a b c 1 2 d'
-        true_ngrams = [(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'),
-                       (u'b', u'c', u'1'), (u'c', u'1', u'2'), (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqRNN.END_CHAR)]
+        true_ngrams = [(Seq2SeqRNN.START_CHAR, Seq2SeqRNN.START_CHAR, u'a'), (u'b', u'c', u'1'),
+                       (u'2', u'd', Seq2SeqRNN.END_CHAR)]
+        self.assertEqual(true_ngrams, Seq2SeqRNN.characters_to_ngrams(input_text.split(), 3, False, False, -2))
+
+    def test_characters_to_ngrams_3(self):
+        input_text = u'a b c 1 2 d'
+        true_ngrams = [(u'a', u'b', u'c'), (u'1', u'2', u'd')]
+        self.assertEqual(true_ngrams, Seq2SeqRNN.characters_to_ngrams(input_text.split(), 3, False, False), 0)
+
+    def test_characters_to_ngrams_4(self):
+        input_text = u'a b c 1 2 d'
+        true_ngrams = [(Seq2SeqRNN.START_CHAR,), (u'a', u'b', u'c'), (u'1', u'2', u'd')]
         self.assertEqual(true_ngrams, Seq2SeqRNN.characters_to_ngrams(input_text.split(), 3, True, False))
 
-    def characters_to_ngrams_3(self):
+    def test_characters_to_ngrams_5(self):
         input_text = u'a b c 1 2 d'
-        true_ngrams = [(Seq2SeqRNN.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'), (u'b', u'c', u'1'), (u'c', u'1', u'2'),
-                       (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqRNN.END_CHAR), (Seq2SeqRNN.END_CHAR,)]
+        true_ngrams = [(u'a', u'b', u'c'), (u'1', u'2', u'd'), (Seq2SeqRNN.END_CHAR,)]
         self.assertEqual(true_ngrams, Seq2SeqRNN.characters_to_ngrams(input_text.split(), 3, False, True))
 
-    def characters_to_ngrams_4(self):
+    def test_characters_to_ngrams_6(self):
         input_text = u'a b c 1 2 d'
-        true_ngrams = [(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.START_CHAR, u'a', u'b'), (u'a', u'b', u'c'),
-                       (u'b', u'c', u'1'), (u'c', u'1', u'2'), (u'1', u'2', u'd'), (u'2', u'd', Seq2SeqRNN.END_CHAR),
-                       (Seq2SeqRNN.END_CHAR,)]
+        true_ngrams = [(Seq2SeqRNN.START_CHAR,), (u'a', u'b', u'c'), (u'1', u'2', u'd'), (Seq2SeqRNN.END_CHAR,)]
         self.assertEqual(true_ngrams, Seq2SeqRNN.characters_to_ngrams(input_text.split(), 3, True, True))
 
     def test_generate_data_for_training_1(self):

@@ -19,7 +19,9 @@ License: Apache License 2.0.
 """
 
 import copy
+import math
 import os
+import random
 import tempfile
 
 from gensim.models import Word2Vec
@@ -148,25 +150,26 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
         max_encoder_seq_length = 0
         max_decoder_seq_length = 0
         for sample_ind in range(len(X)):
-            prep = self.characters_to_ngrams(self.tokenize_text(X[sample_ind], self.lowercase),
-                                             self.char_ngram_size, False, False)
-            n = len(prep)
-            if n <= 0:
-                raise ValueError(u'Sample {0} of `X` is empty!'.format(sample_ind))
-            if n > max_encoder_seq_length:
-                max_encoder_seq_length = n
-            for idx in range(n):
-                input_characters.add(prep[idx])
-            prep = self.tokenize_text(y[sample_ind], self.lowercase)
-            n = len(prep)
-            if n < 0:
-                raise ValueError(u'Sample {0} of `y` is empty!'.format(sample_ind))
-            prep = self.characters_to_ngrams(prep, self.char_ngram_size, True, True)
-            n = len(prep)
-            if n > max_decoder_seq_length:
-                max_decoder_seq_length = n
-            for idx in range(n):
-                target_characters.add(prep[idx])
+            for start_char_idx in range(-self.char_ngram_size + 1, 1):
+                prep = self.characters_to_ngrams(self.tokenize_text(X[sample_ind], self.lowercase),
+                                                 self.char_ngram_size, False, False, start_char_idx)
+                n = len(prep)
+                if n <= 0:
+                    raise ValueError(u'Sample {0} of `X` is empty!'.format(sample_ind))
+                if n > max_encoder_seq_length:
+                    max_encoder_seq_length = n
+                for idx in range(n):
+                    input_characters.add(prep[idx])
+            for start_char_idx in range(-self.char_ngram_size + 1, 1):
+                prep = self.characters_to_ngrams(self.tokenize_text(y[sample_ind], self.lowercase),
+                                                 self.char_ngram_size, True, True, start_char_idx)
+                n = len(prep)
+                if n < 0:
+                    raise ValueError(u'Sample {0} of `y` is empty!'.format(sample_ind))
+                if n > max_decoder_seq_length:
+                    max_decoder_seq_length = n
+                for idx in range(n):
+                    target_characters.add(prep[idx])
         if len(input_characters) == 0:
             raise ValueError(u'`X` is empty!')
         if len(target_characters) == 0:
@@ -175,25 +178,26 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
         target_characters_ = set()
         if (X_eval_set is not None) and (y_eval_set is not None):
             for sample_ind in range(len(X_eval_set)):
-                prep = self.characters_to_ngrams(self.tokenize_text(X_eval_set[sample_ind], self.lowercase),
-                                                 self.char_ngram_size, False, False)
-                n = len(prep)
-                if n <= 0:
-                    raise ValueError(u'Sample {0} of `X_eval_set` is empty!'.format(sample_ind))
-                if n > max_encoder_seq_length:
-                    max_encoder_seq_length = n
-                for idx in range(n):
-                    input_characters_.add(prep[idx])
-                prep = self.tokenize_text(y_eval_set[sample_ind], self.lowercase)
-                n = len(prep)
-                if n < 0:
-                    raise ValueError(u'Sample {0} of `y_eval_set` is empty!'.format(sample_ind))
-                prep = self.characters_to_ngrams(prep, self.char_ngram_size, True, True)
-                n = len(prep)
-                if n > max_decoder_seq_length:
-                    max_decoder_seq_length = n
-                for idx in range(n):
-                    target_characters_.add(prep[idx])
+                for start_char_idx in range(-self.char_ngram_size + 1, 1):
+                    prep = self.characters_to_ngrams(self.tokenize_text(X_eval_set[sample_ind], self.lowercase),
+                                                     self.char_ngram_size, False, False, start_char_idx)
+                    n = len(prep)
+                    if n <= 0:
+                        raise ValueError(u'Sample {0} of `X_eval_set` is empty!'.format(sample_ind))
+                    if n > max_encoder_seq_length:
+                        max_encoder_seq_length = n
+                    for idx in range(n):
+                        input_characters_.add(prep[idx])
+                for start_char_idx in range(-self.char_ngram_size + 1, 1):
+                    prep = self.characters_to_ngrams(self.tokenize_text(y_eval_set[sample_ind], self.lowercase),
+                                                     self.char_ngram_size, True, True, start_char_idx)
+                    n = len(prep)
+                    if n < 0:
+                        raise ValueError(u'Sample {0} of `y_eval_set` is empty!'.format(sample_ind))
+                    if n > max_decoder_seq_length:
+                        max_decoder_seq_length = n
+                    for idx in range(n):
+                        target_characters_.add(prep[idx])
             if len(input_characters_) == 0:
                 raise ValueError(u'`X_eval_set` is empty!')
             if len(target_characters_) == 0:
@@ -398,7 +402,11 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                             target_seq[text_idx][0][token_idx] = 0.0
                         target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
             for text_idx in range(batch_size):
-                texts.append(u' '.join([val[self.char_ngram_size // 2] for val in decoded_sentences[text_idx]]))
+                new_sentence = []
+                for cur_ngram in decoded_sentences[text_idx]:
+                    for cur_char in filter(lambda x: x not in {Seq2SeqRNN.END_CHAR, Seq2SeqRNN.START_CHAR}, cur_ngram):
+                        new_sentence.append(cur_char)
+                texts.append(u' '.join(new_sentence).strip())
             del input_seq
         if isinstance(X, tuple):
             return tuple(texts)
@@ -865,27 +873,30 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
         return file_name
 
     @staticmethod
-    def characters_to_ngrams(characters, char_ngram_size, with_starting_char, with_ending_char):
+    def characters_to_ngrams(characters, char_ngram_size, with_starting_char, with_ending_char, start_char_pos=0):
         """ Group the input character sequence by the character-level N-grams with the specified N.
 
         :param characters: input sequence of characters.
         :param char_ngram_size: specified N (size of the character N-gram).
         :param with_starting_char: need to insert a special starting quasi-character before the resulting sequence.
         :param with_ending_char: need to add a special ending quasi-character after the resulting sequence.
+        :param start_char_pos: start position in the character sequence.
 
         :return the resulting sequence of character N-grams.
         """
-        T = len(characters)
+        if (start_char_pos <= -char_ngram_size) or (start_char_pos > 0):
+            raise ValueError(u'{0} is wrong value for the `start_char_pos` argument.'.format(start_char_pos))
+        T = int(math.ceil((len(characters) - start_char_pos) / float(char_ngram_size)))
         res = []
         if T > 0:
             for t in range(T):
-                start_idx = t - char_ngram_size // 2
+                start_idx = start_char_pos + t * char_ngram_size
                 end_idx = start_idx + char_ngram_size
-                char_ngram = characters[max(0, start_idx):min(end_idx, T)]
+                char_ngram = characters[max(0, start_idx):min(end_idx, len(characters))]
                 if start_idx < 0:
                     char_ngram = [Seq2SeqRNN.START_CHAR] * (-start_idx) + char_ngram
-                if end_idx > T:
-                    char_ngram += [Seq2SeqRNN.END_CHAR] * (end_idx - T)
+                if end_idx > len(characters):
+                    char_ngram += [Seq2SeqRNN.END_CHAR] * (end_idx - len(characters))
                 res.append(tuple(char_ngram))
         if with_starting_char:
             res = [(Seq2SeqRNN.START_CHAR,)] + res
@@ -931,10 +942,10 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                                               dtype=np.float32)
             for i, input_text in enumerate(input_texts[start_pos:end_pos]):
                 tokenized_text = Seq2SeqRNN.tokenize_text(input_text, lowercase)
-                T = len(tokenized_text)
-                if T <= 0:
+                if len(tokenized_text) <= 0:
                     continue
                 tokenized_ngrams = Seq2SeqRNN.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
+                T = len(tokenized_ngrams)
                 if use_embeddings:
                     for t in range(T):
                         if t >= max_encoder_seq_length:
@@ -955,10 +966,10 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                                           dtype=np.float32)
         for i, input_text in enumerate(input_texts[start_pos:end_pos]):
             tokenized_text = Seq2SeqRNN.tokenize_text(input_text, lowercase)
-            T = len(tokenized_text) - char_ngram_size + 1
-            if T <= 0:
+            if len(tokenized_text) <= 0:
                 continue
             tokenized_ngrams = Seq2SeqRNN.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
+            T = len(tokenized_ngrams)
             if use_embeddings:
                 for t in range(T):
                     if t >= max_encoder_seq_length:
@@ -988,16 +999,17 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
         vocabulary_ = set()
         tokenized = []
         for cur_text in texts:
-            prep_text = Seq2SeqRNN.tokenize_text(cur_text, lowercase)
-            if len(prep_text) > 0:
-                prep_text = Seq2SeqRNN.characters_to_ngrams(prep_text, char_ngram_size, False, False)
-                vocabulary_ |= set(prep_text)
-                tokenized.append(
-                    list(map(
-                        lambda it2: u'_'.join(it2),
-                        filter(lambda it1: it1 not in {(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.END_CHAR,)}, prep_text)
-                    ))
-                )
+            characters = Seq2SeqRNN.tokenize_text(cur_text, lowercase)
+            if len(characters) > 0:
+                for start_pos in range((-char_ngram_size + 1), 1):
+                    char_ngrams = Seq2SeqRNN.characters_to_ngrams(characters, char_ngram_size, False, False, start_pos)
+                    vocabulary_ |= set(char_ngrams)
+                    tokenized.append(
+                        list(map(
+                            lambda it: u'_'.join(it),
+                            filter(lambda x: x not in {(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.END_CHAR,)}, char_ngrams)
+                        ))
+                    )
         if (vocabulary_ - {(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.END_CHAR,)}) != \
                 (set(vocabulary.keys()) - {(Seq2SeqRNN.START_CHAR,), (Seq2SeqRNN.END_CHAR,)}):
             raise ValueError(u'Texts contain words not out of vocabulary!')
@@ -1128,11 +1140,13 @@ class TextPairSequence(Sequence):
                 prep_text_idx = prep_text_idx - self.n_text_pairs
             input_text = Seq2SeqRNN.characters_to_ngrams(
                 Seq2SeqRNN.tokenize_text(self.input_texts[prep_text_idx], self.lowercase),
-                self.char_ngram_size, False, False
+                self.char_ngram_size, False, False,
+                random.randint(-self.char_ngram_size + 1, 0) if self.char_ngram_size > 1 else 0
             )
             target_text = Seq2SeqRNN.characters_to_ngrams(
                 Seq2SeqRNN.tokenize_text(self.target_texts[prep_text_idx], self.lowercase),
-                self.char_ngram_size, True, True
+                self.char_ngram_size, True, True,
+                random.randint(-self.char_ngram_size + 1, 0) if self.char_ngram_size > 1 else 0
             )
             if self.use_embeddings:
                 for t in range(len(input_text)):
