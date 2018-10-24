@@ -23,6 +23,7 @@ import math
 import os
 import random
 import tempfile
+import warnings
 
 from gensim.models import Word2Vec
 import keras.backend as K
@@ -982,16 +983,25 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                     continue
                 tokenized_ngrams = Seq2SeqRNN.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
                 T = len(tokenized_ngrams)
+                counter = 0
                 if use_embeddings:
                     for t in range(T):
-                        if t >= max_encoder_seq_length:
+                        if counter >= max_encoder_seq_length:
                             break
-                        encoder_input_data[i, t] = input_token_index[tokenized_ngrams[t]] + 1
+                        if tokenized_ngrams[t] not in input_token_index:
+                            warnings.warn('`{0}` is unknown character N-gram.'.format(' '.join(tokenized_ngrams[t])))
+                            continue
+                        encoder_input_data[i, counter] = input_token_index[tokenized_ngrams[t]] + 1
+                        counter += 1
                 else:
                     for t in range(T):
-                        if t >= max_encoder_seq_length:
+                        if counter >= max_encoder_seq_length:
                             break
-                        encoder_input_data[i, t, input_token_index[tokenized_ngrams[t]]] = 1.0
+                        if tokenized_ngrams[t] not in input_token_index:
+                            warnings.warn('`{0}` is unknown character N-gram.'.format(' '.join(tokenized_ngrams[t])))
+                            continue
+                        encoder_input_data[i, counter, input_token_index[tokenized_ngrams[t]]] = 1.0
+                        counter += 1
             start_pos = end_pos
             yield encoder_input_data
         end_pos = n
@@ -1006,16 +1016,25 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                 continue
             tokenized_ngrams = Seq2SeqRNN.characters_to_ngrams(tokenized_text, char_ngram_size, False, False)
             T = len(tokenized_ngrams)
+            counter = 0
             if use_embeddings:
                 for t in range(T):
-                    if t >= max_encoder_seq_length:
+                    if counter >= max_encoder_seq_length:
                         break
-                    encoder_input_data[i, t] = input_token_index[tokenized_ngrams[t]] + 1
+                    if tokenized_ngrams[t] not in input_token_index:
+                        warnings.warn('`{0}` is unknown character N-gram.'.format(' '.join(tokenized_ngrams[t])))
+                        continue
+                    encoder_input_data[i, counter] = input_token_index[tokenized_ngrams[t]] + 1
+                    counter += 1
             else:
                 for t in range(T):
-                    if t >= max_encoder_seq_length:
+                    if counter >= max_encoder_seq_length:
                         break
-                    encoder_input_data[i, t, input_token_index[tokenized_ngrams[t]]] = 1.0
+                    if tokenized_ngrams[t] not in input_token_index:
+                        warnings.warn('`{0}` is unknown character N-gram.'.format(' '.join(tokenized_ngrams[t])))
+                        continue
+                    encoder_input_data[i, counter, input_token_index[tokenized_ngrams[t]]] = 1.0
+                    counter += 1
         yield encoder_input_data
 
     @staticmethod
@@ -1129,6 +1148,7 @@ class TextPairSequence(Sequence):
         :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
         :param char_ngram_size: length of the character-level N-gram.
         :param use_embeddings: need to use embeddings as tokens vectorization (if False, then one-hot encoding is used).
+        :param kernel_size: size of convolutional kernel if convolution layer is used (in other case it must be 1).
         :param max_encoder_seq_length: maximal length of any input text.
         :param max_decoder_seq_length: maximal length of any target text.
         :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
