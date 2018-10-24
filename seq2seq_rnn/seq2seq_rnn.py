@@ -282,10 +282,19 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
         decoder_rnn = GRU(self.latent_dim, return_sequences=True, return_state=True, activation='tanh',
                           recurrent_activation='hard_sigmoid', dropout=self.dropout,
                           recurrent_dropout=self.recurrent_dropout)
-        decoder_outputs, _ = decoder_rnn(
-            Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
-            initial_state=encoder_states
-        )
+        if self.use_conv_layer:
+            decoder_outputs, _ = decoder_rnn(
+                Masking(mask_value=0.0)(
+                    Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='valid', activation='relu',
+                           use_bias=False)(decoder_inputs if decoder_embeddings is None else decoder_embeddings)
+                ),
+                initial_state=encoder_states
+            )
+        else:
+            decoder_outputs, _ = decoder_rnn(
+                Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
+                initial_state=encoder_states
+            )
         decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
         decoder_outputs = decoder_dense(decoder_outputs)
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
@@ -298,6 +307,7 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
             input_texts=X, target_texts=y,
             batch_size=self.batch_size, char_ngram_size=self.char_ngram_size,
             use_embeddings=(self.embedding_size is not None),
+            kernel_size=self.kernel_size if self.use_conv_layer else 1,
             max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
             input_token_index=self.input_token_index_, target_token_index=self.target_token_index_,
             lowercase=self.lowercase
@@ -307,6 +317,7 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                 input_texts=X_eval_set, target_texts=y_eval_set,
                 batch_size=self.batch_size, char_ngram_size=self.char_ngram_size,
                 use_embeddings=(self.embedding_size is not None),
+                kernel_size=self.kernel_size if self.use_conv_layer else 1,
                 max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
                 input_token_index=self.input_token_index_, target_token_index=self.target_token_index_,
                 lowercase=self.lowercase
@@ -337,10 +348,19 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                 os.remove(tmp_weights_name)
         self.encoder_model_ = Model(encoder_inputs, encoder_states)
         decoder_states_inputs = Input(shape=(self.latent_dim,))
-        decoder_outputs, decoder_states = decoder_rnn(
-            Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
-            initial_state=decoder_states_inputs
-        )
+        if self.use_conv_layer:
+            decoder_outputs, decoder_states = decoder_rnn(
+                Masking(mask_value=0.0)(
+                    Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='valid', activation='relu',
+                           use_bias=False)(decoder_inputs if decoder_embeddings is None else decoder_embeddings)
+                ),
+                initial_state=decoder_states_inputs
+            )
+        else:
+            decoder_outputs, decoder_states = decoder_rnn(
+                Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
+                initial_state=decoder_states_inputs
+            )
         decoder_outputs = decoder_dense(decoder_outputs)
         self.decoder_model_ = Model([decoder_inputs, decoder_states_inputs], [decoder_outputs, decoder_states])
         self.reverse_target_char_index_ = dict((i, char) for char, i in self.target_token_index_.items())
@@ -370,16 +390,21 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
             batch_size = input_seq.shape[0]
             states_value = self.encoder_model_.predict(input_seq)
             if use_embeddings:
-                target_seq = np.zeros((batch_size, 1), dtype=np.int32)
+                target_seq = np.zeros((batch_size, self.kernel_size if self.use_conv_layer else 1), dtype=np.int32)
             else:
-                target_seq = np.zeros((batch_size, 1, len(self.target_token_index_)), dtype=np.float32)
+                target_seq = np.zeros(
+                    (batch_size, self.kernel_size if self.use_conv_layer else 1, len(self.target_token_index_)),
+                    dtype=np.float32
+                )
             stop_conditions = []
             decoded_sentences = []
             for text_idx in range(batch_size):
                 if use_embeddings:
-                    target_seq[text_idx, 0] = self.target_token_index_[(self.START_CHAR,)] + 1
+                    for token_idx in range(target_seq.shape[1]):
+                        target_seq[text_idx, token_idx] = self.target_token_index_[(self.START_CHAR,)] + 1
                 else:
-                    target_seq[text_idx, 0, self.target_token_index_[(self.START_CHAR,)]] = 1.0
+                    for token_idx in range(target_seq.shape[1]):
+                        target_seq[text_idx, token_idx, self.target_token_index_[(self.START_CHAR,)]] = 1.0
                 stop_conditions.append(False)
                 decoded_sentences.append([])
             while not all(stop_conditions):
@@ -395,12 +420,14 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
                         decoded_sentences[text_idx].append(sampled_char)
                         if len(decoded_sentences[text_idx]) >= self.max_decoder_seq_length_:
                             stop_conditions[text_idx] = True
+                    for token_idx in range(1, target_seq.shape[1]):
+                        target_seq[text_idx, token_idx - 1] = target_seq[text_idx, token_idx]
                     if use_embeddings:
-                        target_seq[text_idx, 0] = indices_of_sampled_tokens[text_idx] + 1
+                        target_seq[text_idx, target_seq.shape[1] - 1] = indices_of_sampled_tokens[text_idx] + 1
                     else:
                         for token_idx in range(len(self.target_token_index_)):
-                            target_seq[text_idx][0][token_idx] = 0.0
-                        target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
+                            target_seq[text_idx][target_seq.shape[1] - 1][token_idx] = 0.0
+                        target_seq[text_idx, target_seq.shape[1] - 1, indices_of_sampled_tokens[text_idx]] = 1.0
             for text_idx in range(batch_size):
                 new_sentence = []
                 for cur_ngram in decoded_sentences[text_idx]:
@@ -475,10 +502,19 @@ class Seq2SeqRNN(BaseEstimator, ClassifierMixin):
             decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
             self.encoder_model_ = Model(encoder_inputs, encoder_states)
             decoder_states_inputs = Input(shape=(self.latent_dim,))
-            decoder_outputs, decoder_states = decoder_rnn(
-                Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
-                initial_state=decoder_states_inputs
-            )
+            if self.use_conv_layer:
+                decoder_outputs, decoder_states = decoder_rnn(
+                    Masking(mask_value=0.0)(
+                        Conv1D(kernel_size=self.kernel_size, filters=self.n_filters, padding='valid', activation='relu',
+                               use_bias=False)(decoder_inputs if decoder_embeddings is None else decoder_embeddings)
+                    ),
+                    initial_state=decoder_states_inputs
+                )
+            else:
+                decoder_outputs, decoder_states = decoder_rnn(
+                    Masking(mask_value=0.0)(decoder_inputs if decoder_embeddings is None else decoder_embeddings),
+                    initial_state=decoder_states_inputs
+                )
             decoder_outputs = decoder_dense(decoder_outputs)
             self.decoder_model_ = Model([decoder_inputs, decoder_states_inputs], [decoder_outputs, decoder_states])
             with open(tmp_weights_name, 'wb') as fp:
@@ -1051,7 +1087,7 @@ class TextPairSequence(Sequence):
     """ Object for fitting to a sequence of text pairs without calculating features for all these pairs in memory.
 
     """
-    def __init__(self, input_texts, target_texts, batch_size, char_ngram_size, use_embeddings,
+    def __init__(self, input_texts, target_texts, batch_size, char_ngram_size, use_embeddings, kernel_size,
                  max_encoder_seq_length, max_decoder_seq_length, input_token_index, target_token_index, lowercase):
         """ Generate feature matrices based on one-hot vectorization (or embeddings) for pairs of texts by mini-batches.
 
@@ -1107,6 +1143,7 @@ class TextPairSequence(Sequence):
         self.batch_size = batch_size
         self.char_ngram_size = char_ngram_size
         self.use_embeddings = use_embeddings
+        self.kernel_size = kernel_size
         self.max_encoder_seq_length = max_encoder_seq_length
         self.max_decoder_seq_length = max_decoder_seq_length
         self.input_token_index = input_token_index
@@ -1125,12 +1162,17 @@ class TextPairSequence(Sequence):
         end_pos = start_pos + self.batch_size
         if self.use_embeddings:
             encoder_input_data = np.zeros((self.batch_size, self.max_encoder_seq_length), dtype=np.int32)
-            decoder_input_data = np.zeros((self.batch_size, self.max_decoder_seq_length), dtype=np.int32)
+            decoder_input_data = np.zeros((self.batch_size, self.max_decoder_seq_length + self.kernel_size - 1),
+                                          dtype=np.int32)
         else:
-            encoder_input_data = np.zeros((self.batch_size, self.max_encoder_seq_length, len(self.input_token_index)),
-                                          dtype=np.float32)
-            decoder_input_data = np.zeros((self.batch_size, self.max_decoder_seq_length, len(self.target_token_index)),
-                                          dtype=np.float32)
+            encoder_input_data = np.zeros(
+                (self.batch_size, self.max_encoder_seq_length, len(self.input_token_index)),
+                dtype=np.float32
+            )
+            decoder_input_data = np.zeros(
+                (self.batch_size, self.max_decoder_seq_length + self.kernel_size - 1, len(self.target_token_index)),
+                dtype=np.float32
+            )
         decoder_target_data = np.zeros((self.batch_size, self.max_decoder_seq_length, len(self.target_token_index)),
                                        dtype=np.float32)
         idx_in_batch = 0
@@ -1151,22 +1193,31 @@ class TextPairSequence(Sequence):
             if self.use_embeddings:
                 for t in range(len(input_text)):
                     encoder_input_data[idx_in_batch, t] = self.input_token_index[input_text[t]] + 1
-                decoder_input_data[idx_in_batch, 0] = self.target_token_index[target_text[0]] + 1
+                if self.kernel_size > 1:
+                    for t in range(self.kernel_size - 1):
+                        decoder_input_data[idx_in_batch, t] = self.target_token_index[target_text[0]] + 1
+                decoder_input_data[idx_in_batch, self.kernel_size - 1] = self.target_token_index[target_text[0]] + 1
                 for t in range(len(target_text) - 1):
-                    decoder_input_data[idx_in_batch, t + 1] = self.target_token_index[target_text[t + 1]] + 1
+                    decoder_input_data[idx_in_batch, t + self.kernel_size] = self.target_token_index[
+                                                                                 target_text[t + 1]] + 1
                     decoder_target_data[idx_in_batch, t, self.target_token_index[target_text[t + 1]]] = 1.0
                 t = len(target_text) - 1
-                decoder_input_data[idx_in_batch, t] = self.target_token_index[target_text[t]] + 1
+                decoder_input_data[idx_in_batch, t + self.kernel_size - 1] = self.target_token_index[target_text[t]] + 1
                 decoder_target_data[idx_in_batch, t - 1, self.target_token_index[target_text[t]]] = 1.0
             else:
                 for t in range(len(input_text)):
                     encoder_input_data[idx_in_batch, t, self.input_token_index[input_text[t]]] = 1.0
-                decoder_input_data[idx_in_batch, 0, self.target_token_index[target_text[0]]] = 1.0
+                if self.kernel_size > 1:
+                    for t in range(self.kernel_size - 1):
+                        decoder_input_data[idx_in_batch, t, self.target_token_index[target_text[0]]] = 1.0
+                decoder_input_data[idx_in_batch, self.kernel_size - 1, self.target_token_index[target_text[0]]] = 1.0
                 for t in range(len(target_text) - 1):
-                    decoder_input_data[idx_in_batch, t + 1, self.target_token_index[target_text[t + 1]]] = 1.0
+                    decoder_input_data[idx_in_batch, t + self.kernel_size,
+                                       self.target_token_index[target_text[t + 1]]] = 1.0
                     decoder_target_data[idx_in_batch, t, self.target_token_index[target_text[t + 1]]] = 1.0
                 t = len(target_text) - 1
-                decoder_input_data[idx_in_batch, t, self.target_token_index[target_text[t]]] = 1.0
+                decoder_input_data[idx_in_batch, t + self.kernel_size - 1, self.target_token_index[target_text[t]]] = \
+                    1.0
                 decoder_target_data[idx_in_batch, t - 1, self.target_token_index[target_text[t]]] = 1.0
             idx_in_batch += 1
         return [encoder_input_data, decoder_input_data], decoder_target_data

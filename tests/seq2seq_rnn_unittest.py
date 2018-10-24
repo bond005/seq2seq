@@ -769,7 +769,7 @@ class TestTextPairSequence(unittest.TestCase):
         ]
         training_set_generator = TextPairSequence(
             input_texts=input_texts, target_texts=target_texts, batch_size=batch_size, char_ngram_size=char_ngram_size,
-            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
+            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length, kernel_size=1,
             input_token_index=input_token_index, target_token_index=target_token_index, lowercase=False,
             use_embeddings=False
         )
@@ -930,9 +930,248 @@ class TestTextPairSequence(unittest.TestCase):
         ]
         training_set_generator = TextPairSequence(
             input_texts=input_texts, target_texts=target_texts, batch_size=batch_size, char_ngram_size=char_ngram_size,
-            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length,
+            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length, kernel_size=1,
             input_token_index=input_token_index, target_token_index=target_token_index, lowercase=False,
             use_embeddings=True
+        )
+        self.assertIsInstance(training_set_generator, TextPairSequence)
+        self.assertTrue(hasattr(training_set_generator, 'input_texts'))
+        self.assertTrue(hasattr(training_set_generator, 'target_texts'))
+        self.assertTrue(hasattr(training_set_generator, 'batch_size'))
+        self.assertTrue(hasattr(training_set_generator, 'char_ngram_size'))
+        self.assertTrue(hasattr(training_set_generator, 'max_encoder_seq_length'))
+        self.assertTrue(hasattr(training_set_generator, 'max_decoder_seq_length'))
+        self.assertTrue(hasattr(training_set_generator, 'input_token_index'))
+        self.assertTrue(hasattr(training_set_generator, 'target_token_index'))
+        self.assertTrue(hasattr(training_set_generator, 'lowercase'))
+        self.assertTrue(hasattr(training_set_generator, 'n_text_pairs'))
+        self.assertTrue(hasattr(training_set_generator, 'n_batches'))
+        self.assertIs(training_set_generator.input_texts, input_texts)
+        self.assertIs(training_set_generator.target_texts, target_texts)
+        self.assertEqual(training_set_generator.batch_size, batch_size)
+        self.assertEqual(training_set_generator.char_ngram_size, char_ngram_size)
+        self.assertEqual(training_set_generator.max_encoder_seq_length, max_encoder_seq_length)
+        self.assertEqual(training_set_generator.max_decoder_seq_length, max_decoder_seq_length)
+        self.assertIs(training_set_generator.input_token_index, input_token_index)
+        self.assertIs(training_set_generator.target_token_index, target_token_index)
+        self.assertFalse(training_set_generator.lowercase)
+        self.assertIsInstance(training_set_generator.n_text_pairs, int)
+        self.assertEqual(training_set_generator.n_text_pairs, len(input_texts))
+        self.assertIsInstance(training_set_generator.n_batches, int)
+        self.assertEqual(training_set_generator.n_batches, len(true_batches))
+        for batch_ind in range(len(true_batches)):
+            predicted_batch = training_set_generator[batch_ind]
+            self.assertIsInstance(predicted_batch, tuple, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertEqual(len(predicted_batch), 2, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[0], list, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[1], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertEqual(len(predicted_batch[0]), 2, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[0][0], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch[0][1], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batch[0][0], true_batches[batch_ind][0][0]),
+                            msg=u'batch_ind={0}, encoder_input_data'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batch[0][1], true_batches[batch_ind][0][1]),
+                            msg=u'batch_ind={0}, decoder_input_data'.format(batch_ind))
+            self.assertTrue(np.array_equal(predicted_batch[1], true_batches[batch_ind][1]),
+                            msg=u'batch_ind={0}, decoder_target_data'.format(batch_ind))
+
+    def test_generate_data_for_training_3(self):
+        input_texts = [
+            u'a b c',
+            u'a c',
+            u'0 1 b',
+            u'b a',
+            u'b c'
+        ]
+        target_texts = [
+            u'а б а 2',
+            u'2 3',
+            u'а б а',
+            u'б а',
+            u'б 3'
+        ]
+        char_ngram_size = 1
+        batch_size = 2
+        max_encoder_seq_length = 3
+        max_decoder_seq_length = 6
+        input_token_index = {(u'0',): 0, (u'1',): 1, (u'a',): 2, (u'b',): 3, (u'c',): 4}
+        target_token_index = {(Seq2SeqRNN.START_CHAR,): 0, (Seq2SeqRNN.END_CHAR,): 1, (u'2',): 2, (u'3',): 3,
+                              (u'а',): 4, (u'б',): 5}
+        true_batches = [
+            (
+                [
+                    np.array([
+                        [
+                            [0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0]
+                        ],
+                        [
+                            [0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0]
+                        ]
+                    ]),
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        ]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            ),
+            (
+                [
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0]
+                        ],
+                        [
+                            [0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0]
+                        ]
+                    ]),
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        ]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            ),
+            (
+                [
+                    np.array([
+                        [
+                            [0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                        [
+                            [0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0]
+                        ]
+                    ]),
+                    np.array([
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                        ],
+                        [
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                            [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+                        ]
+                    ])
+                ],
+                np.array([
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ],
+                    [
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+                        [0.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+                    ]
+                ])
+            )
+        ]
+        training_set_generator = TextPairSequence(
+            input_texts=input_texts, target_texts=target_texts, batch_size=batch_size, char_ngram_size=char_ngram_size,
+            max_encoder_seq_length=max_encoder_seq_length, max_decoder_seq_length=max_decoder_seq_length, kernel_size=3,
+            input_token_index=input_token_index, target_token_index=target_token_index, lowercase=False,
+            use_embeddings=False
         )
         self.assertIsInstance(training_set_generator, TextPairSequence)
         self.assertTrue(hasattr(training_set_generator, 'input_texts'))
