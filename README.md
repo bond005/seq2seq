@@ -44,7 +44,7 @@ sudo pip install seq2seq-lstm
 After installing the Seq2Seq-LSTM can be used as Python package in your projects. For example:
 
 ```
-from seq2seq import Seq2SeqLSTM  # import the Seq2Seq-LSTM package
+from seq2seq_lstm import Seq2SeqLSTM  # import the Seq2Seq-LSTM package
 seq2seq = Seq2SeqLSTM()  # create new sequence-to-sequence transformer
 ```
 
