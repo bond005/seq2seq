@@ -18,7 +18,7 @@ To install this project on your local machine, you should run the following comm
 ```
 git clone https://github.com/bond005/seq2seq.git
 cd seq2seq
-sudo python setup.py
+sudo python setup.py install
 ```
 
 You can also run the tests
