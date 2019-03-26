@@ -662,20 +662,26 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
                                           dtype=np.float32)
             for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-                for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
+                t = 0
+                for char in Seq2SeqLSTM.tokenize_text(input_text, lowercase):
                     if t >= max_encoder_seq_length:
                         break
-                    encoder_input_data[i, t, input_token_index[char]] = 1.0
+                    if char in input_token_index:
+                        encoder_input_data[i, t, input_token_index[char]] = 1.0
+                        t += 1
             start_pos = end_pos
             yield encoder_input_data
         end_pos = n
         encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
                                       dtype=np.float32)
         for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-            for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, lowercase)):
+            t = 0
+            for char in Seq2SeqLSTM.tokenize_text(input_text, lowercase):
                 if t >= max_encoder_seq_length:
                     break
-                encoder_input_data[i, t, input_token_index[char]] = 1.0
+                if char in input_token_index:
+                    encoder_input_data[i, t, input_token_index[char]] = 1.0
+                    t += 1
         yield encoder_input_data
 
 
