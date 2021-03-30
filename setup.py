@@ -119,6 +119,6 @@ setup(
         'Programming Language :: Python :: 3.6',
     ],
     keywords=['seq2seq', 'sequence-to-sequence', 'lstm', 'nlp', 'keras', 'scikit-learn'],
-    install_requires=['h5py', 'keras', 'numpy', 'scikit-learn'],
+    install_requires=['h5py>=2.10.0', 'tensorflow>=2.2.1', 'numpy>=1.18.5', 'scikit-learn>=0.23.2'],
     test_suite='tests'
 )

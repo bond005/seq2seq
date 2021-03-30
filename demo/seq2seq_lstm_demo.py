@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 import codecs
 import os
 import pickle
@@ -36,8 +33,8 @@ def load_text_pairs(file_name):
         while len(cur_line) > 0:
             prep_line = cur_line.strip()
             if len(prep_line) > 0:
-                err_msg = u'File "{0}": line {1} is wrong!'.format(file_name, line_idx)
-                line_parts = prep_line.split(u'\t')
+                err_msg = f'File "{file_name}": line {line_idx} is wrong!'
+                line_parts = prep_line.split('\t')
                 assert len(line_parts) == 2, err_msg
                 new_input_text = line_parts[0].strip()
                 new_target_text = line_parts[1].strip()
@@ -57,7 +54,7 @@ def shuffle_text_pairs(*args):
     :return a 2-element tuple: the 1st contains list of left texts, the 2nd contains corresponding list of right texts.
 
     """
-    assert len(args) == 2, u'Text pairs (input and target texts) are specified incorrectly!'
+    assert len(args) == 2, 'Text pairs (input and target texts) are specified incorrectly!'
     indices = list(range(len(args[0])))
     random.shuffle(indices)
     input_texts = []
@@ -79,8 +76,8 @@ def tokenize_text(src):
     tokens = list()
     for cur in src.split():
         tokens += list(cur)
-        tokens.append(u'<space>')
-    return u' '.join(tokens[:-1])
+        tokens.append('<space>')
+    return ' '.join(tokens[:-1])
 
 def detokenize_text(src):
     """ Join all tokens corresponding to single characters for creating the resulting text.
@@ -92,10 +89,10 @@ def detokenize_text(src):
     :return: the resulting text.
 
     """
-    new_text = u''
+    new_text = ''
     for cur_token in src.split():
-        if cur_token == u'<space>':
-            new_text += u' '
+        if cur_token == '<space>':
+            new_text += ' '
         else:
             new_text += cur_token
     return new_text.strip()
@@ -169,7 +166,7 @@ def main():
         else:
             model_dir_name = os.path.dirname(model_name)
             if len(model_dir_name) > 0:
-                assert os.path.isdir(model_dir_name), u'Directory "{0}" does not exist!'.format(model_dir_name)
+                assert os.path.isdir(model_dir_name), f'Directory "{model_dir_name}" does not exist!'
     else:
         model_name = None
 
@@ -178,63 +175,63 @@ def main():
             os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_training.txt')
         )
     )
-    print(u'')
-    print(u'There are {0} text pairs in the training data.'.format(len(input_texts_for_training)))
-    print(u'Some samples of these text pairs:')
+    print('')
+    print(f'There are {len(input_texts_for_training)} text pairs in the training data.')
+    print('Some samples of these text pairs:')
     for ind in range(10):
         input_text = input_texts_for_training[ind]
         target_text = target_texts_for_training[ind]
-        print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
-    print(u'')
+        print('    ' + detokenize_text(input_text) + '\t' + detokenize_text(target_text))
+    print('')
 
     input_texts_for_testing, target_texts_for_testing = load_text_pairs(
         os.path.join(os.path.dirname(__file__), '..', 'data', 'eng_rus_for_testing.txt')
     )
-    print(u'There are {0} text pairs in the testing data.'.format(len(input_texts_for_testing)))
-    print(u'Some samples of these text pairs:')
+    print('There are {0} text pairs in the testing data.'.format(len(input_texts_for_testing)))
+    print('Some samples of these text pairs:')
     indices = list(range(len(input_texts_for_testing)))
     random.shuffle(indices)
     for ind in indices[:10]:
         input_text = input_texts_for_testing[ind]
         target_text = target_texts_for_testing[ind]
-        print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
-    print(u'')
+        print('    ' + detokenize_text(input_text) + '\t' + detokenize_text(target_text))
+    print('')
 
     if (model_name is not None) and os.path.isfile(model_name):
         with open(model_name, 'rb') as fp:
             seq2seq = pickle.load(fp)
         assert isinstance(seq2seq, Seq2SeqLSTM), \
-            u'A sequence-to-sequence neural model cannot be loaded from file "{0}".'.format(model_name)
-        print(u'')
-        print(u'Model has been successfully loaded from file "{0}".'.format(model_name))
+            f'A sequence-to-sequence neural model cannot be loaded from file "{model_name}".'
+        print('')
+        print('Model has been successfully loaded from file "{model_name}".')
     else:
         seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=True, lowercase=False,
                               batch_size=64)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
-        print(u'')
-        print(u'Training has been successfully finished.')
+        print('')
+        print('Training has been successfully finished.')
         if model_name is not None:
             with open(model_name, 'wb') as fp:
                 pickle.dump(seq2seq, fp, protocol=2)
-            print(u'Model has been successfully saved into file "{0}".'.format(model_name))
+            print(f'Model has been successfully saved into file "{model_name}".')
 
     start_time = time.time()
     predicted_texts = seq2seq.predict(input_texts_for_testing)
     end_time = time.time()
     sentence_correct, word_correct, character_correct = estimate(predicted_texts, target_texts_for_testing)
-    print(u'')
-    print(u'{0} texts have been predicted.'.format(len(predicted_texts)))
-    print(u'Some samples of predicted text pairs:')
+    print('')
+    print(f'{len(predicted_texts)} texts have been predicted.')
+    print('Some samples of predicted text pairs:')
     for ind in indices[:10]:
         input_text = input_texts_for_testing[ind]
         target_text = predicted_texts[ind]
-        print(u'    ' + detokenize_text(input_text) + u'\t' + detokenize_text(target_text))
-    print(u'')
-    print(u'Total sentence correct is {0:.2%}.'.format(sentence_correct))
-    print(u'Total word correct is {0:.2%}.'.format(word_correct))
-    print(u'Total character correct is {0:.2%}.'.format(character_correct))
-    print(u'')
-    print(u'Mean time of sentence prediction is {0:.3} sec.'.format((end_time - start_time) / len(predicted_texts)))
+        print('    ' + detokenize_text(input_text) + '\t' + detokenize_text(target_text))
+    print('')
+    print('Total sentence correct is {0:.2%}.'.format(sentence_correct))
+    print('Total word correct is {0:.2%}.'.format(word_correct))
+    print('Total character correct is {0:.2%}.'.format(character_correct))
+    print('')
+    print('Mean time of sentence prediction is {0:.3} sec.'.format((end_time - start_time) / len(predicted_texts)))
 
 
 if __name__ == '__main__':

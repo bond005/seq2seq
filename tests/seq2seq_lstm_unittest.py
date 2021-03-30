@@ -8,7 +8,7 @@ import re
 import sys
 import unittest
 
-from keras import Model
+from tensorflow.keras import Model
 import numpy as np
 from sklearn.utils.validation import NotFittedError
 
@@ -52,6 +52,8 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertFalse(seq2seq.lowercase)
         self.assertTrue(hasattr(seq2seq, 'verbose'))
         self.assertTrue(seq2seq.verbose)
+        self.assertTrue(hasattr(seq2seq, 'random_state'))
+        self.assertIsNone(seq2seq.random_state)
 
     def test_fit_positive01(self):
         """ Input and target texts for training are the Python tuples. """
@@ -173,7 +175,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Object with input texts is not one of the basic sequence types. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
-        true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X'))
+        true_err_msg = re.escape(f'`{type({1, 2})}` is wrong type for `X`.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -185,7 +187,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Object with target texts is not one of the basic sequence types. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
-        true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'y'))
+        true_err_msg = re.escape(f'`{type({1, 2})}` is wrong type for `y`.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -197,8 +199,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Number of input texts does not equal to number of target texts. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
-        true_err_msg = re.escape(u'`X` does not correspond to `y`! {0} != {1}.'.format(
-            len(input_texts_for_training), len(target_texts_for_training) - 1))
+        true_err_msg = re.escape(f'`X` does not correspond to `y`! {len(input_texts_for_training)} != {len(target_texts_for_training) - 1}.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -210,7 +211,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Some parameter of the `Seq2SeqLSTM` object is wrong. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(batch_size=0)
-        true_err_msg = re.escape(u'`batch_size` must be a positive number! 0 is not positive.')
+        true_err_msg = re.escape('`batch_size` must be a positive number! 0 is not positive.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -222,8 +223,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Special evaluation set is neither list nor tuple. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None)
-        true_err_msg = re.escape(u'`eval_set` must be `{0}` or `{1}`, not `{2}`!'.format(
-            type((1, 2)), type([1, 2]), type({1: 'a', 2: 'b'})))
+        true_err_msg = re.escape(f'`eval_set` must be `{type((1, 2))}` or `{type([1, 2])}`, not `{type({1: "a", 2: "b"})}`!')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -236,7 +236,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Special evaluation set is not a two-element tuple. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None)
-        true_err_msg = re.escape(u'`eval_set` must be a two-element sequence! 3 != 2')
+        true_err_msg = re.escape('`eval_set` must be a two-element sequence! 3 != 2')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -249,7 +249,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Object with input texts in the special evaluation set is not one of the basic sequence types. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
-        true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X_eval_set'))
+        true_err_msg = re.escape(f'`{type({1, 2})}` is wrong type for `X_eval_set`.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -262,7 +262,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Object with target texts in the special evaluation set is not one of the basic sequence types. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
-        true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'y_eval_set'))
+        true_err_msg = re.escape(f'`{type({1, 2})}` is wrong type for `y_eval_set`.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -275,7 +275,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         """ Number of input texts does not equal to number of target texts in the special evaluation set. """
         input_texts_for_training, target_texts_for_training = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM()
-        true_err_msg = re.escape(u'`X_eval_set` does not correspond to `y_eval_set`! 20 != 19.')
+        true_err_msg = re.escape('`X_eval_set` does not correspond to `y_eval_set`! 20 != 19.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -293,11 +293,11 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertEqual(len(predicted_texts), len(input_texts))
         indices = list(range(len(predicted_texts)))
         random.shuffle(indices)
-        print(u'')
-        print(u'Some predicted texts:')
+        print('')
+        print('Some predicted texts:')
         for ind in range(min(5, len(predicted_texts))):
-            print(u'    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
-                  u'\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
+            print('    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
+                  '\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
         self.assertGreater(self.estimate(predicted_texts, target_texts), 0.1)
 
     def test_predict_negative001(self):
@@ -312,7 +312,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         input_texts_for_testing, target_texts_for_testing = self.load_text_pairs(self.data_set_name)
         seq2seq = Seq2SeqLSTM(validation_split=None, epochs=20)
         seq2seq.fit(input_texts_for_testing, target_texts_for_testing)
-        true_err_msg = re.escape(u'`{0}` is wrong type for `{1}`.'.format(type({1, 2}), u'X'))
+        true_err_msg = re.escape(f'`{type({1, 2})}` is wrong type for `X`.')
         try:
             checking_method = self.assertRaisesRegex
         except:
@@ -322,30 +322,30 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_check_X_negative001(self):
         """ All texts must be a string and have a `split` method. """
-        texts = [u'123', 4, u'567']
-        true_err_msg = re.escape(u'Sample {0} of `{1}` is wrong! This sample have not the `split` method.'.format(
-            1, u'X'))
+        texts = ['123', 4, '567']
+        true_err_msg = re.escape('Sample 1 of `X` is wrong! This sample have not the `split` method.')
         try:
             checking_method = self.assertRaisesRegex
         except:
             checking_method = self.assertRaisesRegexp
         with checking_method(ValueError, true_err_msg):
-            Seq2SeqLSTM.check_X(texts, u'X')
+            Seq2SeqLSTM.check_X(texts, 'X')
 
     def test_check_X_negative002(self):
         """ If list of texts is specified as the NumPy array, then it must be a 1-D array. """
         texts = np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]])
-        true_err_msg = re.escape(u'`X` must be a 1-D array!')
+        true_err_msg = re.escape('`X` must be a 1-D array!')
         try:
             checking_method = self.assertRaisesRegex
         except:
             checking_method = self.assertRaisesRegexp
         with checking_method(ValueError, true_err_msg):
-            Seq2SeqLSTM.check_X(texts, u'X')
+            Seq2SeqLSTM.check_X(texts, 'X')
 
     def test_serialize_untrained(self):
         seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1,
-                              grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True)
+                              grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True,
+                              random_state=42)
         with open(self.model_name, 'wb') as fp:
             pickle.dump(seq2seq, fp)
         with open(self.model_name, 'rb') as fp:
@@ -369,6 +369,8 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertFalse(another_seq2seq.lowercase)
         self.assertTrue(hasattr(another_seq2seq, 'verbose'))
         self.assertTrue(another_seq2seq.verbose)
+        self.assertTrue(hasattr(another_seq2seq, 'random_state'))
+        self.assertEqual(another_seq2seq.random_state, 42)
 
     def test_serialize_trained(self):
         input_texts, target_texts = self.load_text_pairs(self.data_set_name)
@@ -399,15 +401,15 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_tokenize_text_positive01(self):
         """ Tokenization with saving of the characters register. """
-        src = u'a\t B  c Мама мыла \n\r раму 1\n'
-        dst_true = [u'a', u'B', u'c', u'Мама', u'мыла', u'раму', u'1']
+        src = 'a\t B  c Мама мыла \n\r раму 1\n'
+        dst_true = ['a', 'B', 'c', 'Мама', 'мыла', 'раму', '1']
         dst_predicted = Seq2SeqLSTM.tokenize_text(src, lowercase=False)
         self.assertEqual(dst_predicted, dst_true)
 
     def test_tokenize_text_positive02(self):
         """ Tokenization with bringing the resulting tokens to lowercase. """
-        src = u'a\t B  c Мама мыла \n\r раму 1\n'
-        dst_true = [u'a', u'b', u'c', u'мама', u'мыла', u'раму', u'1']
+        src = 'a\t B  c Мама мыла \n\r раму 1\n'
+        dst_true = ['a', 'b', 'c', 'мама', 'мыла', 'раму', '1']
         dst_predicted = Seq2SeqLSTM.tokenize_text(src, lowercase=True)
         self.assertEqual(dst_predicted, dst_true)
 
@@ -421,8 +423,8 @@ class TestSeq2SeqLSTM(unittest.TestCase):
             while len(cur_line) > 0:
                 prep_line = cur_line.strip()
                 if len(prep_line) > 0:
-                    err_msg = u'File "{0}": line {1} is wrong!'.format(file_name, line_idx)
-                    line_parts = prep_line.split(u'\t')
+                    err_msg = f'File "{file_name}": line {line_idx} is wrong!'
+                    line_parts = prep_line.split('\t')
                     assert len(line_parts) == 2, err_msg
                     new_input_text = line_parts[0].strip()
                     new_target_text = line_parts[1].strip()
@@ -438,15 +440,15 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         tokens = list()
         for cur in src.split():
             tokens += list(cur)
-            tokens.append(u'<space>')
-        return u' '.join(tokens[:-1])
+            tokens.append('<space>')
+        return ' '.join(tokens[:-1])
 
     @staticmethod
     def detokenize_text(src):
-        new_text = u''
+        new_text = ''
         for cur_token in src.split():
-            if cur_token == u'<space>':
-                new_text += u' '
+            if cur_token == '<space>':
+                new_text += ' '
             else:
                 new_text += cur_token
         return new_text.strip()
@@ -466,24 +468,24 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 class TestTextPairSequence(unittest.TestCase):
     def test_generate_data_for_training(self):
         input_texts = [
-            u'a b c',
-            u'a c',
-            u'0 1 b',
-            u'b a',
-            u'b c'
+            'a b c',
+            'a c',
+            '0 1 b',
+            'b a',
+            'b c'
         ]
         target_texts = [
-            u'а б а 2',
-            u'2 3',
-            u'а б а',
-            u'б а',
-            u'б 3'
+            'а б а 2',
+            '2 3',
+            'а б а',
+            'б а',
+            'б 3'
         ]
         batch_size = 2
         max_encoder_seq_length = 3
         max_decoder_seq_length = 6
-        input_token_index = {u'0': 0, u'1': 1, u'a': 2, u'b': 3, u'c': 4}
-        target_token_index = {u'\t': 0, u'\n': 1, u'2': 2, u'3': 3, u'а': 4, u'б': 5}
+        input_token_index = {'0': 0, '1': 1, 'a': 2, 'b': 3, 'c': 4}
+        target_token_index = {'\t': 0, '\n': 1, '2': 2, '3': 3, 'а': 4, 'б': 5}
         true_batches = [
             (
                 [
@@ -672,16 +674,20 @@ class TestTextPairSequence(unittest.TestCase):
         self.assertEqual(training_set_generator.n_batches, len(true_batches))
         for batch_ind in range(len(true_batches)):
             predicted_batch = training_set_generator[batch_ind]
-            self.assertIsInstance(predicted_batch, tuple, msg=u'batch_ind={0}'.format(batch_ind))
-            self.assertEqual(len(predicted_batch), 2, msg=u'batch_ind={0}'.format(batch_ind))
-            self.assertIsInstance(predicted_batch[0], list, msg=u'batch_ind={0}'.format(batch_ind))
-            self.assertIsInstance(predicted_batch[1], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
-            self.assertEqual(len(predicted_batch[0]), 2, msg=u'batch_ind={0}'.format(batch_ind))
-            self.assertIsInstance(predicted_batch[0][0], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
-            self.assertIsInstance(predicted_batch[0][1], np.ndarray, msg=u'batch_ind={0}'.format(batch_ind))
+            self.assertIsInstance(predicted_batch, tuple, msg=f'batch_ind={batch_ind}')
+            self.assertEqual(len(predicted_batch), 2, msg=f'batch_ind={batch_ind}')
+            self.assertIsInstance(predicted_batch[0], list, msg=f'batch_ind={batch_ind}')
+            self.assertIsInstance(predicted_batch[1], np.ndarray, msg=f'batch_ind={batch_ind}')
+            self.assertEqual(len(predicted_batch[0]), 2, msg=f'batch_ind={batch_ind}')
+            self.assertIsInstance(predicted_batch[0][0], np.ndarray, msg=f'batch_ind={batch_ind}')
+            self.assertIsInstance(predicted_batch[0][1], np.ndarray, msg=f'batch_ind={batch_ind}')
             self.assertTrue(np.array_equal(predicted_batch[0][0], true_batches[batch_ind][0][0]),
-                            msg=u'batch_ind={0}, encoder_input_data'.format(batch_ind))
+                            msg=f'batch_ind={batch_ind}, encoder_input_data')
             self.assertTrue(np.array_equal(predicted_batch[0][1], true_batches[batch_ind][0][1]),
-                            msg=u'batch_ind={0}, decoder_input_data'.format(batch_ind))
+                            msg=f'batch_ind={batch_ind}, decoder_input_data')
             self.assertTrue(np.array_equal(predicted_batch[1], true_batches[batch_ind][1]),
-                            msg=u'batch_ind={0}, decoder_target_data'.format(batch_ind))
+                            msg=f'batch_ind={batch_ind}, decoder_target_data')
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """ Sequence-to-sequence classifier with the sklearn-like interface
 
 Base module for the sequence-to-sequence classifier, which converts one language sequence into another.
@@ -20,14 +18,16 @@ License: Apache License 2.0.
 
 import copy
 import os
+import random
 import tempfile
 
-import keras.backend as K
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-from keras.models import Model
-from keras.layers import Input, LSTM, Dense
-from keras.optimizers import RMSprop
-from keras.utils import Sequence
+import tensorflow.keras.backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.initializers import GlorotUniform, Orthogonal
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, LSTM, Dense, Masking
+from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.utils import Sequence
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
@@ -36,7 +36,7 @@ from sklearn.utils.validation import check_is_fitted
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
     def __init__(self, batch_size=64, epochs=100, latent_dim=256, validation_split=0.2, grad_clipping=100.0, lr=0.001,
-                 rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False):
+                 rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False, random_state=None):
         """ Create a new object with specified parameters.
 
         :param batch_size: maximal number of texts or text pairs in the single mini-batch (positive integer).
@@ -62,6 +62,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.epsilon = epsilon
         self.lowercase = lowercase
         self.verbose = verbose
+        self.random_state = random_state
 
     def fit(self, X, y, **kwargs):
         """ Fit the seq2seq model to convert sequences one to another.
@@ -84,22 +85,20 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         """
         self.check_params(**self.get_params(deep=False))
-        self.check_X(X, u'X')
-        self.check_X(y, u'y')
+        self.check_X(X, 'X')
+        self.check_X(y, 'y')
         if len(X) != len(y):
-            raise ValueError(u'`X` does not correspond to `y`! {0} != {1}.'.format(len(X), len(y)))
+            raise ValueError(f'`X` does not correspond to `y`! {len(X)} != {len(y)}.')
         if 'eval_set' in kwargs:
             if (not isinstance(kwargs['eval_set'], tuple)) and (not isinstance(kwargs['eval_set'], list)):
-                raise ValueError(u'`eval_set` must be `{0}` or `{1}`, not `{2}`!'.format(
-                    type((1, 2)), type([1, 2]), type(kwargs['eval_set'])))
+                raise ValueError(f'`eval_set` must be `{type((1, 2))}` or `{type([1, 2])}`, not `{type(kwargs["eval_set"])}`!')
             if len(kwargs['eval_set']) != 2:
-                raise ValueError(u'`eval_set` must be a two-element sequence! {0} != 2'.format(
-                    len(kwargs['eval_set'])))
-            self.check_X(kwargs['eval_set'][0], u'X_eval_set')
-            self.check_X(kwargs['eval_set'][1], u'y_eval_set')
+                raise ValueError(f'`eval_set` must be a two-element sequence! {len(kwargs["eval_set"])} != 2')
+            self.check_X(kwargs['eval_set'][0], 'X_eval_set')
+            self.check_X(kwargs['eval_set'][1], 'y_eval_set')
             if len(kwargs['eval_set'][0]) != len(kwargs['eval_set'][1]):
-                raise ValueError(u'`X_eval_set` does not correspond to `y_eval_set`! {0} != {1}.'.format(
-                    len(kwargs['eval_set'][0]), len(kwargs['eval_set'][1])))
+                raise ValueError(f'`X_eval_set` does not correspond to `y_eval_set`! '
+                                 f'{len(kwargs["eval_set"][0])} != {len(kwargs["eval_set"][1])}.')
             X_eval_set = kwargs['eval_set'][0]
             y_eval_set = kwargs['eval_set'][1]
         else:
@@ -109,9 +108,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             else:
                 n_eval_set = int(round(len(X) * self.validation_split))
                 if n_eval_set < 1:
-                    raise ValueError(u'`validation_split` is too small! There are no samples for evaluation!')
+                    raise ValueError('`validation_split` is too small! There are no samples for evaluation!')
                 if n_eval_set >= len(X):
-                    raise ValueError(u'`validation_split` is too large! There are no samples for training!')
+                    raise ValueError('`validation_split` is too large! There are no samples for training!')
                 X_eval_set = X[-n_eval_set:-1]
                 y_eval_set = y[-n_eval_set:-1]
                 X = X[:-n_eval_set]
@@ -124,21 +123,21 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             prep = self.tokenize_text(X[sample_ind], self.lowercase)
             n = len(prep)
             if n == 0:
-                raise ValueError(u'Sample {0} of `X` is wrong! This sample is empty.'.format(sample_ind))
+                raise ValueError(f'Sample {sample_ind} of `X` is wrong! This sample is empty.')
             if n > max_encoder_seq_length:
                 max_encoder_seq_length = n
             input_characters |= set(prep)
             prep = self.tokenize_text(y[sample_ind], self.lowercase)
             n = len(prep)
             if n == 0:
-                raise ValueError(u'Sample {0} of `y` is wrong! This sample is empty.'.format(sample_ind))
+                raise ValueError(f'Sample {sample_ind} of `y` is wrong! This sample is empty.')
             if (n + 2) > max_decoder_seq_length:
                 max_decoder_seq_length = n + 2
             target_characters |= set(prep)
         if len(input_characters) == 0:
-            raise ValueError(u'`X` is empty!')
+            raise ValueError('`X` is empty!')
         if len(target_characters) == 0:
-            raise ValueError(u'`y` is empty!')
+            raise ValueError('`y` is empty!')
         input_characters_ = set()
         target_characters_ = set()
         if (X_eval_set is not None) and (y_eval_set is not None):
@@ -146,52 +145,74 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 prep = self.tokenize_text(X_eval_set[sample_ind], self.lowercase)
                 n = len(prep)
                 if n == 0:
-                    raise ValueError(u'Sample {0} of `X_eval_set` is wrong! This sample is empty.'.format(sample_ind))
+                    raise ValueError(f'Sample {sample_ind} of `X_eval_set` is wrong! This sample is empty.')
                 if n > max_encoder_seq_length:
                     max_encoder_seq_length = n
                 input_characters_ |= set(prep)
                 prep = self.tokenize_text(y_eval_set[sample_ind], self.lowercase)
                 n = len(prep)
                 if n == 0:
-                    raise ValueError(u'Sample {0} of `y_eval_set` is wrong! This sample is empty.'.format(sample_ind))
+                    raise ValueError(f'Sample {sample_ind} of `y_eval_set` is wrong! This sample is empty.')
                 if (n + 2) > max_decoder_seq_length:
                     max_decoder_seq_length = n + 2
                 target_characters_ |= set(prep)
             if len(input_characters_) == 0:
-                raise ValueError(u'`X_eval_set` is empty!')
+                raise ValueError('`X_eval_set` is empty!')
             if len(target_characters_) == 0:
-                raise ValueError(u'`y_eval_set` is empty!')
+                raise ValueError('`y_eval_set` is empty!')
         input_characters = sorted(list(input_characters | input_characters_))
-        target_characters = sorted(list(target_characters | target_characters_ | {u'\t', u'\n'}))
+        target_characters = sorted(list(target_characters | target_characters_ | {'\t', '\n'}))
         if self.verbose:
-            print(u'')
-            print(u'Number of samples for training:', len(X))
+            print('')
+            print(f'Number of samples for training: {len(X)}.')
             if X_eval_set is not None:
-                print(u'Number of samples for evaluation and early stopping:', len(X_eval_set))
-            print(u'Number of unique input tokens:', len(input_characters))
-            print(u'Number of unique output tokens:', len(target_characters))
-            print(u'Max sequence length for inputs:', max_encoder_seq_length)
-            print(u'Max sequence length for outputs:', max_decoder_seq_length)
-            print(u'')
+                print(f'Number of samples for evaluation and early stopping: {len(X_eval_set)}.')
+            print(f'Number of unique input tokens: {len(input_characters)}.')
+            print(f'Number of unique output tokens: {len(target_characters)}.')
+            print(f'Max sequence length for inputs: {max_encoder_seq_length}.')
+            print(f'Max sequence length for outputs: {max_decoder_seq_length}.')
+            print('')
         self.input_token_index_ = dict([(char, i) for i, char in enumerate(input_characters)])
         self.target_token_index_ = dict([(char, i) for i, char in enumerate(target_characters)])
         self.max_encoder_seq_length_ = max_encoder_seq_length
         self.max_decoder_seq_length_ = max_decoder_seq_length
-        encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-        encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True)
-        encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+        K.clear_session()
+        encoder_inputs = Input(shape=(None, len(self.input_token_index_)),
+                               name='EncoderInputs')
+        encoder_mask = Masking(name='EncoderMask', mask_value=0.0)(encoder_inputs)
+        encoder = LSTM(
+            self.latent_dim,
+            return_sequences=False, return_state=True,
+            kernel_initializer=GlorotUniform(seed=self.generate_random_seed()),
+            recurrent_initializer=Orthogonal(seed=self.generate_random_seed()),
+            name='EncoderLSTM'
+        )
+        encoder_outputs, state_h, state_c = encoder(encoder_mask)
         encoder_states = [state_h, state_c]
-        decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
-        decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True)
-        decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
-        decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
+        decoder_inputs = Input(shape=(None, len(self.target_token_index_)),
+                               name='DecoderInputs')
+        decoder_mask = Masking(name='DecoderMask', mask_value=0.0)(decoder_inputs)
+        decoder_lstm = LSTM(
+            self.latent_dim,
+            return_sequences=True, return_state=True,
+            kernel_initializer=GlorotUniform(seed=self.generate_random_seed()),
+            recurrent_initializer=Orthogonal(seed=self.generate_random_seed()),
+            name='DecoderLSTM'
+        )
+        decoder_outputs, _, _ = decoder_lstm(decoder_mask, initial_state=encoder_states)
+        decoder_dense = Dense(
+            len(self.target_token_index_), activation='softmax',
+            kernel_initializer=GlorotUniform(seed=self.generate_random_seed()),
+            name='DecoderOutput'
+        )
         decoder_outputs = decoder_dense(decoder_outputs)
-        model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+        model = Model([encoder_inputs, decoder_inputs], decoder_outputs,
+                      name='Seq2SeqModel')
         optimizer = RMSprop(lr=self.lr, rho=self.rho, epsilon=self.epsilon, decay=0.0, clipnorm=self.grad_clipping)
         model.compile(optimizer=optimizer, loss='categorical_crossentropy')
         if self.verbose:
             model.summary(positions=[0.23, 0.77, 0.85, 1.0])
-            print(u'')
+            print('')
         training_set_generator = TextPairSequence(
             input_texts=X, target_texts=y,
             batch_size=self.batch_size,
@@ -208,7 +229,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 lowercase=self.lowercase
             )
             callbacks = [
-                EarlyStopping(patience=5, verbose=(1 if self.verbose else 0))
+                EarlyStopping(patience=5, verbose=(1 if self.verbose else 0), monitor='val_loss')
             ]
         else:
             evaluation_set_generator = None
@@ -217,7 +238,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         try:
             callbacks.append(
                 ModelCheckpoint(filepath=tmp_weights_name, verbose=(1 if self.verbose else 0), save_best_only=True,
-                                save_weights_only=True)
+                                save_weights_only=True,
+                                monitor='loss' if evaluation_set_generator is None else 'val_loss')
             )
             model.fit_generator(
                 generator=training_set_generator,
@@ -236,7 +258,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         decoder_state_input_c = Input(shape=(self.latent_dim,))
         decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
         decoder_outputs, state_h, state_c = decoder_lstm(
-            decoder_inputs, initial_state=decoder_states_inputs)
+            decoder_mask, initial_state=decoder_states_inputs)
         decoder_states = [state_h, state_c]
         decoder_outputs = decoder_dense(decoder_outputs)
         self.decoder_model_ = Model(
@@ -256,7 +278,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :return: resulting sequences, predicted for source sequences.
 
         """
-        self.check_X(X, u'X')
+        self.check_X(X, 'X')
         check_is_fitted(self, ['input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
                                'max_encoder_seq_length_', 'max_decoder_seq_length_',
                                'encoder_model_', 'decoder_model_'])
@@ -271,7 +293,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             stop_conditions = []
             decoded_sentences = []
             for text_idx in range(batch_size):
-                target_seq[text_idx, 0, self.target_token_index_[u'\t']] = 1.0
+                target_seq[text_idx, 0, self.target_token_index_['\t']] = 1.0
                 stop_conditions.append(False)
                 decoded_sentences.append([])
             while not all(stop_conditions):
@@ -282,14 +304,14 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                         continue
                     sampled_char = self.reverse_target_char_index_[indices_of_sampled_tokens[text_idx]]
                     decoded_sentences[text_idx].append(sampled_char)
-                    if (sampled_char == u'\n') or (len(decoded_sentences[text_idx]) > self.max_decoder_seq_length_):
+                    if (sampled_char == '\n') or (len(decoded_sentences[text_idx]) > self.max_decoder_seq_length_):
                         stop_conditions[text_idx] = True
                     for token_idx in range(len(self.target_token_index_)):
                         target_seq[text_idx][0][token_idx] = 0.0
                     target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
                 states_value = [h, c]
             for text_idx in range(batch_size):
-                texts.append(u' '.join(decoded_sentences[text_idx]))
+                texts.append(' '.join(decoded_sentences[text_idx]))
             del input_seq
         if isinstance(X, tuple):
             return tuple(texts)
@@ -307,32 +329,49 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         neural encoder and neural decoder respectively.
         """
         if not isinstance(weights_as_bytes, tuple):
-            raise ValueError(u'`weights_as_bytes` must be a 2-element tuple, not `{0}`!'.format(type(weights_as_bytes)))
+            raise ValueError(f'`weights_as_bytes` must be a 2-element tuple, not `{type(weights_as_bytes)}`!')
         if len(weights_as_bytes) != 2:
-            raise ValueError(u'`weights_as_bytes` must be a 2-element tuple, but it is a {0}-element tuple!'.format(
-                len(weights_as_bytes)))
+            raise ValueError(f'`weights_as_bytes` must be a 2-element tuple, but it is a {len(weights_as_bytes)}-element tuple!')
         if (not isinstance(weights_as_bytes[0], bytearray)) and (not isinstance(weights_as_bytes[0], bytes)):
-            raise ValueError(u'First element of `weights_as_bytes` must be an array of bytes, not `{0}`!'.format(
-                type(weights_as_bytes[0])))
+            raise ValueError(f'First element of `weights_as_bytes` must be an array of bytes, not `{type(weights_as_bytes[0])}`!')
         if (not isinstance(weights_as_bytes[1], bytearray)) and (not isinstance(weights_as_bytes[1], bytes)):
-            raise ValueError(u'Second element of `weights_as_bytes` must be an array of bytes, not `{0}`!'.format(
-                type(weights_as_bytes[1])))
+            raise ValueError(f'Second element of `weights_as_bytes` must be an array of bytes, not `{type(weights_as_bytes[1])}`!')
         tmp_weights_name = self.get_temp_name()
         try:
-            encoder_inputs = Input(shape=(None, len(self.input_token_index_)))
-            encoder = LSTM(self.latent_dim, return_sequences=False, return_state=True)
-            encoder_outputs, state_h, state_c = encoder(encoder_inputs)
+            K.clear_session()
+            encoder_inputs = Input(shape=(None, len(self.input_token_index_)),
+                                   name='EncoderInputs')
+            encoder_mask = Masking(name='EncoderMask', mask_value=0.0)(encoder_inputs)
+            encoder = LSTM(
+                self.latent_dim,
+                return_sequences=False, return_state=True,
+                kernel_initializer=GlorotUniform(seed=self.generate_random_seed()),
+                recurrent_initializer=Orthogonal(seed=self.generate_random_seed()),
+                name='EncoderLSTM'
+            )
+            encoder_outputs, state_h, state_c = encoder(encoder_mask)
             encoder_states = [state_h, state_c]
-            decoder_inputs = Input(shape=(None, len(self.target_token_index_)))
-            decoder_lstm = LSTM(self.latent_dim, return_sequences=True, return_state=True)
-            decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
-            decoder_dense = Dense(len(self.target_token_index_), activation='softmax')
+            decoder_inputs = Input(shape=(None, len(self.target_token_index_)),
+                                   name='DecoderInputs')
+            decoder_mask = Masking(name='DecoderMask', mask_value=0.0)(decoder_inputs)
+            decoder_lstm = LSTM(
+                self.latent_dim, return_sequences=True, return_state=True,
+                kernel_initializer=GlorotUniform(seed=self.generate_random_seed()),
+                recurrent_initializer=Orthogonal(seed=self.generate_random_seed()),
+                name='DecoderLSTM'
+            )
+            decoder_outputs, _, _ = decoder_lstm(decoder_mask, initial_state=encoder_states)
+            decoder_dense = Dense(
+                len(self.target_token_index_), activation='softmax',
+                kernel_initializer=GlorotUniform(seed=self.generate_random_seed()),
+                name='DecoderOutput'
+            )
             self.encoder_model_ = Model(encoder_inputs, encoder_states)
             decoder_state_input_h = Input(shape=(self.latent_dim,))
             decoder_state_input_c = Input(shape=(self.latent_dim,))
             decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
             decoder_outputs, state_h, state_c = decoder_lstm(
-                decoder_inputs, initial_state=decoder_states_inputs)
+                decoder_mask, initial_state=decoder_states_inputs)
             decoder_states = [state_h, state_c]
             decoder_outputs = decoder_dense(decoder_outputs)
             self.decoder_model_ = Model(
@@ -389,7 +428,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         """
         return {'batch_size': self.batch_size, 'epochs': self.epochs, 'latent_dim': self.latent_dim,
                 'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho, 'epsilon': self.epsilon,
-                'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping}
+                'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping,
+                'random_state': self.random_state}
 
     def set_params(self, **params):
         """ Set parameters for this estimator.
@@ -441,16 +481,16 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :return: self.
         """
         if not isinstance(new_params, dict):
-            raise ValueError(u'`new_params` is wrong! Expected {0}.'.format(type({0: 1})))
+            raise ValueError(f'`new_params` is wrong! Expected {type({0: 1})}.')
         self.check_params(**new_params)
         expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'validation_split', 'lr', 'rho',
-                               'epsilon', 'lowercase', 'verbose', 'grad_clipping'}
+                               'epsilon', 'lowercase', 'verbose', 'grad_clipping', 'random_state'}
         params_after_training = {'weights', 'input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
                                  'max_encoder_seq_length_', 'max_decoder_seq_length_'}
         is_fitted = len(set(new_params.keys())) > len(expected_param_keys)
         if is_fitted:
             if set(new_params.keys()) != (expected_param_keys | params_after_training):
-                raise ValueError(u'`new_params` does not contain all expected keys!')
+                raise ValueError('`new_params` does not contain all expected keys!')
         self.batch_size = new_params['batch_size']
         self.epochs = new_params['epochs']
         self.latent_dim = new_params['latent_dim']
@@ -461,26 +501,22 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.lowercase = new_params['lowercase']
         self.verbose = new_params['verbose']
         self.grad_clipping = new_params['grad_clipping']
+        self.random_state = new_params['random_state']
         if is_fitted:
             if not isinstance(new_params['input_token_index_'], dict):
-                raise ValueError(u'`new_params` is wrong! `input_token_index_` must be the `{0}`!'.format(
-                    type({1: 'a', 2: 'b'})))
+                raise ValueError(f'`new_params` is wrong! `input_token_index_` must be the `{type({1: "a", 2: "b"})}`!')
             if not isinstance(new_params['target_token_index_'], dict):
-                raise ValueError(u'`new_params` is wrong! `target_token_index_` must be the `{0}`!'.format(
-                    type({1: 'a', 2: 'b'})))
+                raise ValueError(f'`new_params` is wrong! `target_token_index_` must be the `{type({1: "a", 2: "b"})}`!')
             if not isinstance(new_params['reverse_target_char_index_'], dict):
-                raise ValueError(u'`new_params` is wrong! `reverse_target_char_index_` must be the `{0}`!'.format(
-                    type({1: 'a', 2: 'b'})))
+                raise ValueError(f'`new_params` is wrong! `reverse_target_char_index_` must be the `{type({1: "a", 2: "b"})}`!')
             if not isinstance(new_params['max_encoder_seq_length_'], int):
-                raise ValueError(u'`new_params` is wrong! `max_encoder_seq_length_` must be the `{0}`!'.format(
-                    type(10)))
+                raise ValueError(f'`new_params` is wrong! `max_encoder_seq_length_` must be the `{type(10)}`!')
             if new_params['max_encoder_seq_length_'] < 1:
-                raise ValueError(u'`new_params` is wrong! `max_encoder_seq_length_` must be a positive integer number!')
+                raise ValueError('`new_params` is wrong! `max_encoder_seq_length_` must be a positive integer number!')
             if not isinstance(new_params['max_decoder_seq_length_'], int):
-                raise ValueError(u'`new_params` is wrong! `max_decoder_seq_length_` must be the `{0}`!'.format(
-                    type(10)))
+                raise ValueError(f'`new_params` is wrong! `max_decoder_seq_length_` must be the `{type(10)}`!')
             if new_params['max_decoder_seq_length_'] < 1:
-                raise ValueError(u'`new_params` is wrong! `max_decoder_seq_length_` must be a positive integer number!')
+                raise ValueError('`new_params` is wrong! `max_decoder_seq_length_` must be a positive integer number!')
             self.max_decoder_seq_length_ = new_params['max_decoder_seq_length_']
             self.max_encoder_seq_length_ = new_params['max_encoder_seq_length_']
             self.input_token_index_ = copy.deepcopy(new_params['input_token_index_'])
@@ -488,6 +524,14 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             self.reverse_target_char_index_ = copy.deepcopy(new_params['reverse_target_char_index_'])
             self.load_weights(new_params['weights'])
         return self
+
+    def generate_random_seed(self) -> int:
+        """ Generate random seed as a random positive integer value. """
+        if self.random_state is None:
+            value = random.randint(0, 2147483646)
+        else:
+            value = self.random_state
+        return value
 
     def __copy__(self):
         cls = self.__class__
@@ -525,71 +569,70 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         """
         if 'batch_size' not in kwargs:
-            raise ValueError(u'`batch_size` is not found!')
+            raise ValueError('`batch_size` is not found!')
         if not isinstance(kwargs['batch_size'], int):
-            raise ValueError(u'`batch_size` must be `{0}`, not `{1}`.'.format(type(10), type(kwargs['batch_size'])))
+            raise ValueError(f'`batch_size` must be `{type(10)}`, not `{type(kwargs["batch_size"])}`.')
         if kwargs['batch_size'] < 1:
-            raise ValueError(u'`batch_size` must be a positive number! {0} is not positive.'.format(
-                kwargs['batch_size']))
+            raise ValueError(f'`batch_size` must be a positive number! {kwargs["batch_size"]} is not positive.')
         if 'epochs' not in kwargs:
-            raise ValueError(u'`epochs` is not found!')
+            raise ValueError('`epochs` is not found!')
         if not isinstance(kwargs['epochs'], int):
-            raise ValueError(u'`epochs` must be `{0}`, not `{1}`.'.format(type(10), type(kwargs['epochs'])))
+            raise ValueError(f'`epochs` must be `{type(10)}`, not `{type(kwargs["epochs"])}`.')
         if kwargs['epochs'] < 1:
-            raise ValueError(u'`epochs` must be a positive number! {0} is not positive.'.format(kwargs['epochs']))
+            raise ValueError(f'`epochs` must be a positive number! {kwargs["epochs"]} is not positive.')
         if 'latent_dim' not in kwargs:
-            raise ValueError(u'`latent_dim` is not found!')
+            raise ValueError('`latent_dim` is not found!')
         if not isinstance(kwargs['latent_dim'], int):
-            raise ValueError(u'`latent_dim` must be `{0}`, not `{1}`.'.format(type(10), type(kwargs['latent_dim'])))
+            raise ValueError(f'`latent_dim` must be `{type(10)}`, not `{type(kwargs["latent_dim"])}`.')
         if kwargs['latent_dim'] < 1:
-            raise ValueError(u'`latent_dim` must be a positive number! {0} is not positive.'.format(
-                kwargs['latent_dim']))
+            raise ValueError(f'`latent_dim` must be a positive number! {kwargs["latent_dim"]} is not positive.')
         if 'lowercase' not in kwargs:
-            raise ValueError(u'`lowercase` is not found!')
+            raise ValueError('`lowercase` is not found!')
         if (not isinstance(kwargs['lowercase'], int)) and (not isinstance(kwargs['lowercase'], bool)):
-            raise ValueError(u'`lowercase` must be `{0}` or `{1}`, not `{2}`.'.format(type(10), type(True),
-                                                                                      type(kwargs['lowercase'])))
+            raise ValueError(f'`lowercase` must be `{type(10)}` or `{type(True)}`, not `{type(kwargs["lowercase"])}`.')
         if 'verbose' not in kwargs:
-            raise ValueError(u'`verbose` is not found!')
+            raise ValueError('`verbose` is not found!')
         if (not isinstance(kwargs['verbose'], int)) and (not isinstance(kwargs['verbose'], bool)):
-            raise ValueError(u'`verbose` must be `{0}` or `{1}`, not `{2}`.'.format(type(10), type(True),
-                                                                                    type(kwargs['verbose'])))
+            raise ValueError(f'`verbose` must be `{type(10)}` or `{type(True)}`, not `{type(kwargs["verbose"])}`.')
         if 'validation_split' not in kwargs:
-            raise ValueError(u'`validation_split` is not found!')
+            raise ValueError('`validation_split` is not found!')
         if kwargs['validation_split'] is not None:
             if not isinstance(kwargs['validation_split'], float):
-                raise ValueError(u'`validation_split` must be `{0}`, not `{1}`.'.format(
-                    type(1.5), type(kwargs['validation_split'])))
+                raise ValueError(f'`validation_split` must be `{type(1.5)}`, not `{type(kwargs["validation_split"])}`.')
             if (kwargs['validation_split'] <= 0.0) or (kwargs['validation_split'] >= 1.0):
-                raise ValueError(u'`validation_split` must be in interval (0.0, 1.0)!')
+                raise ValueError('`validation_split` must be in interval (0.0, 1.0)!')
         if 'lr' not in kwargs:
-            raise ValueError(u'`lr` is not found!')
+            raise ValueError('`lr` is not found!')
         if not isinstance(kwargs['lr'], float):
-            raise ValueError(u'`lr` must be `{0}`, not `{1}`.'.format(type(1.5), type(kwargs['lr'])))
+            raise ValueError(f'`lr` must be `{type(1.5)}`, not `{type(kwargs["lr"])}`.')
         if kwargs['lr'] <= 0.0:
-            raise ValueError(u'`lr` must be a positive floating-point value!')
+            raise ValueError('`lr` must be a positive floating-point value!')
         if 'grad_clipping' not in kwargs:
-            raise ValueError(u'`grad_clipping` is not found!')
+            raise ValueError('`grad_clipping` is not found!')
         if not isinstance(kwargs['grad_clipping'], float):
-            raise ValueError(u'`grad_clipping` must be `{0}`, not `{1}`.'.format(type(1.5),
-                                                                                 type(kwargs['grad_clipping'])))
+            raise ValueError(f'`grad_clipping` must be `{type(1.5)}`, not `{type(kwargs["grad_clipping"])}`.')
         if kwargs['grad_clipping'] <= 0.0:
-            raise ValueError(u'`grad_clipping` must be a positive floating-point value!')
+            raise ValueError('`grad_clipping` must be a positive floating-point value!')
         if 'rho' not in kwargs:
-            raise ValueError(u'`rho` is not found!')
+            raise ValueError('`rho` is not found!')
         if not isinstance(kwargs['rho'], float):
-            raise ValueError(u'`rho` must be `{0}`, not `{1}`.'.format(type(1.5), type(kwargs['rho'])))
+            raise ValueError(f'`rho` must be `{type(1.5)}`, not `{type(kwargs["rho"])}`.')
         if kwargs['rho'] < 0.0:
-            raise ValueError(u'`rho` must be a non-negative floating-point value!')
+            raise ValueError('`rho` must be a non-negative floating-point value!')
         if 'epsilon' not in kwargs:
-            raise ValueError(u'`epsilon` is not found!')
+            raise ValueError('`epsilon` is not found!')
         if not isinstance(kwargs['epsilon'], float):
-            raise ValueError(u'`epsilon` must be `{0}`, not `{1}`.'.format(type(1.5), type(kwargs['epsilon'])))
+            raise ValueError(f'`epsilon` must be `{type(1.5)}`, not `{type(kwargs["epsilon"])}`.')
         if kwargs['epsilon'] < 0.0:
-            raise ValueError(u'`epsilon` must be a non-negative floating-point value!')
+            raise ValueError('`epsilon` must be a non-negative floating-point value!')
+        if 'random_state' not in kwargs:
+            raise ValueError('`random_state` is not found!')
+        if kwargs['random_state'] is not None:
+            if not isinstance(kwargs['random_state'], int):
+                raise ValueError(f'`random_state` must be `{type(10)}`, not `{type(kwargs["random_state"])}`.')
 
     @staticmethod
-    def check_X(X, checked_object_name=u'X'):
+    def check_X(X, checked_object_name='X'):
         """ Check correctness of specified sequences (texts) and raise `ValueError` if wrong values are found.
 
         :param X: sequences for checking (list, tuple or numpy.ndarray object, containing the unicode strings).
@@ -597,17 +640,16 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         """
         if (not isinstance(X, list)) and (not isinstance(X, tuple)) and (not isinstance(X, np.ndarray)):
-            raise ValueError(u'`{0}` is wrong type for `{1}`.'.format(type(X), checked_object_name))
+            raise ValueError(f'`{type(X)}` is wrong type for `{checked_object_name}`.')
         if isinstance(X, np.ndarray):
             if len(X.shape) != 1:
-                raise ValueError(u'`{0}` must be a 1-D array!'.format(checked_object_name))
+                raise ValueError(f'`{checked_object_name}` must be a 1-D array!')
         n = len(X)
         if n == 0:
-            raise ValueError(u'{0} is empty!'.format(checked_object_name))
+            raise ValueError(f'{checked_object_name} is empty!')
         for sample_ind in range(n):
             if not hasattr(X[sample_ind], 'split'):
-                raise ValueError(u'Sample {0} of `{1}` is wrong! This sample have not the `split` method.'.format(
-                    sample_ind, checked_object_name))
+                raise ValueError(f'Sample {sample_ind} of `{checked_object_name}` is wrong! This sample have not the `split` method.')
 
     @staticmethod
     def tokenize_text(src, lowercase):
@@ -628,7 +670,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :return name of file as string.
 
         """
-        fp = tempfile.NamedTemporaryFile(delete=True)
+        fp = tempfile.NamedTemporaryFile(delete=True, suffix='.h5')
         file_name = fp.name
         fp.close()
         del fp
@@ -756,7 +798,7 @@ class TextPairSequence(Sequence):
             target_text = self.target_texts[prep_text_idx]
             for t, char in enumerate(Seq2SeqLSTM.tokenize_text(input_text, self.lowercase)):
                 encoder_input_data[idx_in_batch, t, self.input_token_index[char]] = 1.0
-            for t, char in enumerate([u'\t'] + Seq2SeqLSTM.tokenize_text(target_text, self.lowercase) + [u'\n']):
+            for t, char in enumerate(['\t'] + Seq2SeqLSTM.tokenize_text(target_text, self.lowercase) + ['\n']):
                 decoder_input_data[idx_in_batch, t, self.target_token_index[char]] = 1.0
                 if t > 0:
                     decoder_target_data[idx_in_batch, t - 1, self.target_token_index[char]] = 1.0
