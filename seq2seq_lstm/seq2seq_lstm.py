@@ -21,13 +21,16 @@ import os
 import random
 import tempfile
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 from tensorflow.keras.initializers import GlorotUniform, Orthogonal
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, LSTM, Dense, Masking
-from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.utils import Sequence
+from tensorflow_addons.optimizers import RectifiedAdam, Lookahead
+from tqdm import tqdm
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
@@ -35,8 +38,8 @@ from sklearn.utils.validation import check_is_fitted
 
 class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
     """ Sequence-to-sequence classifier, which converts one language sequence into another. """
-    def __init__(self, batch_size=64, epochs=100, latent_dim=256, validation_split=0.2, grad_clipping=100.0, lr=0.001,
-                 rho=0.9, epsilon=K.epsilon(), lowercase=True, verbose=False, random_state=None):
+    def __init__(self, batch_size=64, epochs=100, latent_dim=256, validation_split=0.2, grad_clipping=None,
+                 lr=0.001, weight_decay=1e-5, lowercase=True, verbose=False, random_state=None):
         """ Create a new object with specified parameters.
 
         :param batch_size: maximal number of texts or text pairs in the single mini-batch (positive integer).
@@ -44,9 +47,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         :param latent_dim: number of units in the LSTM layer (positive integer).
         :param validation_split: the ratio of the evaluation set size to the total number of samples (float between 0
         and 1).
-        :param grad_clipping: maximally permissible gradient norm (positive float).
+        :param grad_clipping: maximally permissible gradient norm (positive float or None).
         :param lr: learning rate (positive float)
-        :param rho: parameter of the RMSprop algorithm (non-negative float).
         :param epsilon: fuzzy factor.
         :param lowercase: need to bring all tokens of all texts to the lowercase.
         :param verbose: need to printing a training log.
@@ -58,8 +60,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.validation_split = validation_split
         self.grad_clipping = grad_clipping
         self.lr = lr
-        self.rho = rho
-        self.epsilon = epsilon
+        self.weight_decay = weight_decay
         self.lowercase = lowercase
         self.verbose = verbose
         self.random_state = random_state
@@ -69,8 +70,9 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         Each sequence is unicode text composed from the tokens. Tokens are separated by spaces.
 
-        The RMSprop algorithm is used for training. To avoid overfitting, you must use an early stopping criterion.
-        This criterion is included automatically if evaluation set is defined. You can do this in one of two ways:
+        The Rectified Adam with Lookahead algorithm is used for training. To avoid overfitting,
+        you must use an early stopping criterion. This criterion is included automatically
+        if evaluation set is defined. You can do this in one of two ways:
 
         1) set a `validation_split` parameter of this object, and in this case evaluation set will be selected as a
         corresponded part of training set proportionally to the `validation_split` value;
@@ -208,7 +210,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         decoder_outputs = decoder_dense(decoder_outputs)
         model = Model([encoder_inputs, decoder_inputs], decoder_outputs,
                       name='Seq2SeqModel')
-        optimizer = RMSprop(lr=self.lr, rho=self.rho, epsilon=self.epsilon, decay=0.0, clipnorm=self.grad_clipping)
+        radam = RectifiedAdam(learning_rate=self.lr, weight_decay=self.weight_decay)
+        optimizer = Lookahead(radam, sync_period=6, slow_step_size=0.5)
         model.compile(optimizer=optimizer, loss='categorical_crossentropy')
         if self.verbose:
             model.summary(positions=[0.23, 0.77, 0.85, 1.0])
@@ -283,13 +286,26 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                                'max_encoder_seq_length_', 'max_decoder_seq_length_',
                                'encoder_model_', 'decoder_model_'])
         texts = list()
-        for input_seq in Seq2SeqLSTM.generate_data_for_prediction(
-                input_texts=X, batch_size=self.batch_size, max_encoder_seq_length=self.max_encoder_seq_length_,
-                input_token_index=self.input_token_index_, lowercase=self.lowercase
-        ):
-            batch_size = input_seq.shape[0]
+        n_samples = X.shape[0] if isinstance(X, np.ndarray) else len(X)
+        n_batches = int(np.ceil(n_samples / float(self.batch_size)))
+        bounds_of_batches = [
+            (
+                idx * self.batch_size,
+                min(n_samples, (idx + 1) * self.batch_size)
+            ) for idx in range(n_batches)
+        ]
+        for batch_start, batch_end in (tqdm(bounds_of_batches) if self.verbose else bounds_of_batches):
+            input_seq = Seq2SeqLSTM.generate_data_for_prediction(
+                input_texts=X, batch_start=batch_start, batch_end=batch_end,
+                max_encoder_seq_length=self.max_encoder_seq_length_,
+                input_token_index=self.input_token_index_,
+                lowercase=self.lowercase
+            )
+            batch_size = batch_end - batch_start
             states_value = self.encoder_model_.predict(input_seq)
-            target_seq = np.zeros((batch_size, 1, len(self.target_token_index_)), dtype=np.float32)
+            target_seq = np.zeros(
+                (batch_size, 1, len(self.target_token_index_)),
+                dtype=np.float32)
             stop_conditions = []
             decoded_sentences = []
             for text_idx in range(batch_size):
@@ -297,22 +313,27 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 stop_conditions.append(False)
                 decoded_sentences.append([])
             while not all(stop_conditions):
-                output_tokens, h, c = self.decoder_model_.predict([target_seq] + states_value)
-                indices_of_sampled_tokens = np.argmax(output_tokens[:, -1, :], axis=1)
+                output_tokens, h, c = self.decoder_model_.predict(
+                    [target_seq] + states_value)
+                indices_of_sampled_tokens = np.argmax(output_tokens[:, -1, :],
+                                                      axis=1)
                 for text_idx in range(batch_size):
                     if stop_conditions[text_idx]:
                         continue
-                    sampled_char = self.reverse_target_char_index_[indices_of_sampled_tokens[text_idx]]
+                    sampled_char = self.reverse_target_char_index_[
+                        indices_of_sampled_tokens[text_idx]]
                     decoded_sentences[text_idx].append(sampled_char)
                     if (sampled_char == '\n') or (len(decoded_sentences[text_idx]) > self.max_decoder_seq_length_):
                         stop_conditions[text_idx] = True
                     for token_idx in range(len(self.target_token_index_)):
                         target_seq[text_idx][0][token_idx] = 0.0
-                    target_seq[text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
+                    target_seq[
+                        text_idx, 0, indices_of_sampled_tokens[text_idx]] = 1.0
                 states_value = [h, c]
             for text_idx in range(batch_size):
                 texts.append(' '.join(decoded_sentences[text_idx]))
             del input_seq
+        del bounds_of_batches
         if isinstance(X, tuple):
             return tuple(texts)
         if isinstance(X, np.ndarray):
@@ -427,7 +448,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         """
         return {'batch_size': self.batch_size, 'epochs': self.epochs, 'latent_dim': self.latent_dim,
-                'validation_split': self.validation_split, 'lr': self.lr, 'rho': self.rho, 'epsilon': self.epsilon,
+                'validation_split': self.validation_split, 'lr': self.lr, 'weight_decay': self.weight_decay,
                 'lowercase': self.lowercase, 'verbose': self.verbose, 'grad_clipping': self.grad_clipping,
                 'random_state': self.random_state}
 
@@ -483,8 +504,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         if not isinstance(new_params, dict):
             raise ValueError(f'`new_params` is wrong! Expected {type({0: 1})}.')
         self.check_params(**new_params)
-        expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'validation_split', 'lr', 'rho',
-                               'epsilon', 'lowercase', 'verbose', 'grad_clipping', 'random_state'}
+        expected_param_keys = {'batch_size', 'epochs', 'latent_dim', 'validation_split', 'lr', 'weight_decay',
+                               'lowercase', 'verbose', 'grad_clipping', 'random_state'}
         params_after_training = {'weights', 'input_token_index_', 'target_token_index_', 'reverse_target_char_index_',
                                  'max_encoder_seq_length_', 'max_decoder_seq_length_'}
         is_fitted = len(set(new_params.keys())) > len(expected_param_keys)
@@ -496,8 +517,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         self.latent_dim = new_params['latent_dim']
         self.validation_split = new_params['validation_split']
         self.lr = new_params['lr']
-        self.rho = new_params['rho']
-        self.epsilon = new_params['epsilon']
+        self.weight_decay = new_params['weight_decay']
         self.lowercase = new_params['lowercase']
         self.verbose = new_params['verbose']
         self.grad_clipping = new_params['grad_clipping']
@@ -609,22 +629,17 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
             raise ValueError('`lr` must be a positive floating-point value!')
         if 'grad_clipping' not in kwargs:
             raise ValueError('`grad_clipping` is not found!')
-        if not isinstance(kwargs['grad_clipping'], float):
-            raise ValueError(f'`grad_clipping` must be `{type(1.5)}`, not `{type(kwargs["grad_clipping"])}`.')
-        if kwargs['grad_clipping'] <= 0.0:
-            raise ValueError('`grad_clipping` must be a positive floating-point value!')
-        if 'rho' not in kwargs:
-            raise ValueError('`rho` is not found!')
-        if not isinstance(kwargs['rho'], float):
-            raise ValueError(f'`rho` must be `{type(1.5)}`, not `{type(kwargs["rho"])}`.')
-        if kwargs['rho'] < 0.0:
-            raise ValueError('`rho` must be a non-negative floating-point value!')
-        if 'epsilon' not in kwargs:
-            raise ValueError('`epsilon` is not found!')
-        if not isinstance(kwargs['epsilon'], float):
-            raise ValueError(f'`epsilon` must be `{type(1.5)}`, not `{type(kwargs["epsilon"])}`.')
-        if kwargs['epsilon'] < 0.0:
-            raise ValueError('`epsilon` must be a non-negative floating-point value!')
+        if kwargs['grad_clipping'] is not None:
+            if not isinstance(kwargs['grad_clipping'], float):
+                raise ValueError(f'`grad_clipping` must be `{type(1.5)}`, not `{type(kwargs["grad_clipping"])}`.')
+            if kwargs['grad_clipping'] <= 0.0:
+                raise ValueError('`grad_clipping` must be a positive floating-point value!')
+        if 'weight_decay' not in kwargs:
+            raise ValueError('`weight_decay` is not found!')
+        if not isinstance(kwargs['weight_decay'], float):
+            raise ValueError(f'`weight_decay` must be `{type(1.5)}`, not `{type(kwargs["weight_decay"])}`.')
+        if kwargs['weight_decay'] < 0.0:
+            raise ValueError('`weight_decay` must be a non-negative floating-point value!')
         if 'random_state' not in kwargs:
             raise ValueError('`random_state` is not found!')
         if kwargs['random_state'] is not None:
@@ -677,8 +692,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         return file_name
 
     @staticmethod
-    def generate_data_for_prediction(input_texts, batch_size, max_encoder_seq_length, input_token_index, lowercase):
-        """ Generate feature matrices based on one-hot vectorization for input texts by mini-batches.
+    def generate_data_for_prediction(input_texts, batch_start, batch_end, max_encoder_seq_length, input_token_index, lowercase):
+        """ Generate feature matrix based on one-hot vectorization for input texts by specified mini-batch.
 
         This generator is used in the prediction process by means of the trained neural model. Each text is a unicode
         string in which all tokens are separated by spaces. It generates a 3-D array (numpy.ndarray object), using
@@ -686,7 +701,8 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
         position in this text, and third dimension is index of this token in the input vocabulary).
 
         :param input_texts: sequence (list, tuple or numpy.ndarray) of input texts.
-        :param batch_size: target size of single mini-batch, i.e. number of text pairs in this mini-batch.
+        :param batch_start: a starting input text in the mini-batch.
+        :param batch_end: an ending input text in the mini-batch.
         :param max_encoder_seq_length: maximal length of any input text.
         :param input_token_index: the special index for one-hot encoding any input text as numerical feature matrix.
         :param lowercase: the need to bring all tokens of all texts to the lowercase.
@@ -695,28 +711,19 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
 
         """
         n = len(input_texts)
-        n_batches = n // batch_size
-        while (n_batches * batch_size) < n:
-            n_batches += 1
-        start_pos = 0
-        for batch_ind in range(n_batches - 1):
-            end_pos = start_pos + batch_size
-            encoder_input_data = np.zeros((batch_size, max_encoder_seq_length, len(input_token_index)),
-                                          dtype=np.float32)
-            for i, input_text in enumerate(input_texts[start_pos:end_pos]):
-                t = 0
-                for char in Seq2SeqLSTM.tokenize_text(input_text, lowercase):
-                    if t >= max_encoder_seq_length:
-                        break
-                    if char in input_token_index:
-                        encoder_input_data[i, t, input_token_index[char]] = 1.0
-                        t += 1
-            start_pos = end_pos
-            yield encoder_input_data
-        end_pos = n
-        encoder_input_data = np.zeros((end_pos - start_pos, max_encoder_seq_length, len(input_token_index)),
-                                      dtype=np.float32)
-        for i, input_text in enumerate(input_texts[start_pos:end_pos]):
+        if (batch_start < 0) or (batch_start >= n):
+            err_msg = f'A mini-batch start = {batch_start} is wrong for ' \
+                      f'the input dataset included {n} samples.'
+            raise ValueError(err_msg)
+        if (batch_end <= batch_start) or (batch_end > n):
+            err_msg = f'A mini-batch end = {batch_end} is wrong for ' \
+                      f'the input dataset included {n} samples.'
+            raise ValueError(err_msg)
+        batch_size = batch_end - batch_start
+        encoder_input_data = np.zeros(
+            (batch_size, max_encoder_seq_length, len(input_token_index)),
+            dtype=np.float32)
+        for i, input_text in enumerate(input_texts[batch_start:batch_end]):
             t = 0
             for char in Seq2SeqLSTM.tokenize_text(input_text, lowercase):
                 if t >= max_encoder_seq_length:
@@ -724,7 +731,7 @@ class Seq2SeqLSTM(BaseEstimator, ClassifierMixin):
                 if char in input_token_index:
                     encoder_input_data[i, t, input_token_index[char]] = 1.0
                     t += 1
-        yield encoder_input_data
+        return encoder_input_data
 
 
 class TextPairSequence(Sequence):

@@ -203,10 +203,10 @@ def main():
         assert isinstance(seq2seq, Seq2SeqLSTM), \
             f'A sequence-to-sequence neural model cannot be loaded from file "{model_name}".'
         print('')
-        print('Model has been successfully loaded from file "{model_name}".')
+        print(f'Model has been successfully loaded from file "{model_name}".')
     else:
-        seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, verbose=True, lowercase=False,
-                              batch_size=64)
+        seq2seq = Seq2SeqLSTM(latent_dim=256, validation_split=0.1, epochs=200, lr=1e-3, weight_decay=1e-5,
+                              verbose=True, lowercase=False, batch_size=256)
         seq2seq.fit(input_texts_for_training, target_texts_for_training)
         print('')
         print('Training has been successfully finished.')

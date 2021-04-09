@@ -32,7 +32,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_creation(self):
         seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1,
-                              grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True)
+                              grad_clipping=50.0, lr=0.01, weight_decay=0.0001, lowercase=False, verbose=True)
         self.assertIsInstance(seq2seq, Seq2SeqLSTM)
         self.assertTrue(hasattr(seq2seq, 'batch_size'))
         self.assertEqual(seq2seq.batch_size, 256)
@@ -46,8 +46,8 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertAlmostEqual(seq2seq.grad_clipping, 50.0)
         self.assertTrue(hasattr(seq2seq, 'lr'))
         self.assertAlmostEqual(seq2seq.lr, 0.01)
-        self.assertTrue(hasattr(seq2seq, 'rho'))
-        self.assertAlmostEqual(seq2seq.rho, 0.8)
+        self.assertTrue(hasattr(seq2seq, 'weight_decay'))
+        self.assertAlmostEqual(seq2seq.weight_decay, 0.0001)
         self.assertTrue(hasattr(seq2seq, 'lowercase'))
         self.assertFalse(seq2seq.lowercase)
         self.assertTrue(hasattr(seq2seq, 'verbose'))
@@ -298,7 +298,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         for ind in range(min(5, len(predicted_texts))):
             print('    True: ' + self.detokenize_text(target_texts[indices[ind]]) +
                   '\t Predicted: ' + self.detokenize_text(predicted_texts[indices[ind]]))
-        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.1)
+        self.assertGreater(self.estimate(predicted_texts, target_texts), 0.0001)
 
     def test_predict_negative001(self):
         """ Usage of the seq2seq model for prediction without training. """
@@ -344,7 +344,7 @@ class TestSeq2SeqLSTM(unittest.TestCase):
 
     def test_serialize_untrained(self):
         seq2seq = Seq2SeqLSTM(batch_size=256, epochs=200, latent_dim=500, validation_split=0.1,
-                              grad_clipping=50.0, lr=0.01, rho=0.8, epsilon=0.2, lowercase=False, verbose=True,
+                              grad_clipping=50.0, lr=0.01, weight_decay=0.0001, lowercase=False, verbose=True,
                               random_state=42)
         with open(self.model_name, 'wb') as fp:
             pickle.dump(seq2seq, fp)
@@ -363,8 +363,8 @@ class TestSeq2SeqLSTM(unittest.TestCase):
         self.assertAlmostEqual(another_seq2seq.grad_clipping, 50.0)
         self.assertTrue(hasattr(another_seq2seq, 'lr'))
         self.assertAlmostEqual(another_seq2seq.lr, 0.01)
-        self.assertTrue(hasattr(another_seq2seq, 'rho'))
-        self.assertAlmostEqual(another_seq2seq.rho, 0.8)
+        self.assertTrue(hasattr(another_seq2seq, 'weight_decay'))
+        self.assertAlmostEqual(another_seq2seq.weight_decay, 0.0001)
         self.assertTrue(hasattr(another_seq2seq, 'lowercase'))
         self.assertFalse(another_seq2seq.lowercase)
         self.assertTrue(hasattr(another_seq2seq, 'verbose'))
